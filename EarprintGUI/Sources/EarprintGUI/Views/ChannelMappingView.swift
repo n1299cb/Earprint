@@ -5,6 +5,7 @@ struct ChannelMappingView: View {
     @Environment(\.dismiss) private var dismiss
     var playbackChannels: Int
     var recordingChannels: Int
+    var playbackDevice: String
     var speakerLabels: [String]
     @Binding var channelMapping: [String: [Int]]
     var onSave: () -> Void = {}
@@ -27,15 +28,18 @@ struct ChannelMappingView: View {
 
     @State private var speakerSelections: [Int]
     @State private var micSelections: [Int]
+    @State private var useTone: Bool = true
 
     init(playbackChannels: Int,
          recordingChannels: Int,
          speakerLabels: [String],
+         playbackDevice: String,
          channelMapping: Binding<[String: [Int]]>,
          onSave: @escaping () -> Void = {}) {
         self.playbackChannels = playbackChannels
         self.recordingChannels = recordingChannels
         self.speakerLabels = speakerLabels
+        self.playbackDevice = playbackDevice
         self._channelMapping = channelMapping
         self.onSave = onSave
         _speakerSelections = State(initialValue: channelMapping.wrappedValue["output_channels"] ?? Array(0..<speakerLabels.count))
@@ -48,6 +52,11 @@ struct ChannelMappingView: View {
                 if speakerLabels.isEmpty {
                     Text("No speaker labels available").foregroundColor(.red)
                 }
+                Picker("Signal", selection: $useTone) {
+                    Text("1 kHz Tone").tag(true)
+                    Text("Pink Noise").tag(false)
+                }
+                .pickerStyle(SegmentedPickerStyle())
                 ForEach(speakerLabels.indices, id: \.self) { idx in
                     Picker(speakerLabels[idx], selection: $speakerSelections[idx]) {
                         ForEach(0..<playbackChannels, id: \.self) { ch in
@@ -55,6 +64,7 @@ struct ChannelMappingView: View {
                         }
                     }
                     .pickerStyle(MenuPickerStyle())
+                    Button("Test") { playChannel(idx: speakerSelections[idx]) }
                 }
             }
         }
@@ -73,6 +83,37 @@ struct ChannelMappingView: View {
                 }
             }
         }
+    }
+
+    func playChannel(idx: Int) {
+        let process = Process()
+        process.currentDirectoryURL = scriptsRoot
+        if let py = embeddedPythonURL {
+            process.executableURL = py
+            process.arguments = [
+                scriptPath("channel_tester.py"),
+                "--device", playbackDevice,
+                "--channels", String(playbackChannels),
+                "--channel", String(idx)
+            ] + (useTone ? ["--tone"] : [])
+            process.environment = [
+                "PYTHONHOME": py.deletingLastPathComponent().deletingLastPathComponent().path,
+                "PYTHONPATH": scriptsRoot.path
+            ]
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            var args = [
+                "python3",
+                scriptPath("channel_tester.py"),
+                "--device", playbackDevice,
+                "--channels", String(playbackChannels),
+                "--channel", String(idx)
+            ]
+            if useTone { args.append("--tone") }
+            process.arguments = args
+        }
+        try? process.run()
+        process.waitUntilExit()
     }
 
     var body: some View {

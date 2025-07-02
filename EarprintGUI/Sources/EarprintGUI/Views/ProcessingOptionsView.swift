@@ -21,11 +21,6 @@ struct ProcessingOptionsView: View {
     @Binding var micCalibration: String
     @Binding var interactiveDelays: Bool
 
-#if canImport(AVFoundation)
-    @StateObject private var previewer = AudioPreviewer()
-    @State private var isPreviewing = false
-#endif
-
     var body: some View {
         Form {
             Picker("Channel Balance", selection: $channelBalance) {
@@ -73,17 +68,6 @@ struct ProcessingOptionsView: View {
                     }
                 }
             }
-#if canImport(AVFoundation)
-            Button(isPreviewing ? "Stop Preview" : "Start Preview") {
-                if isPreviewing {
-                    previewer.stop()
-                } else if !testSignal.isEmpty {
-                    previewer.start(url: URL(fileURLWithPath: testSignal), balance: channelBalance)
-                }
-                isPreviewing.toggle()
-            }
-            .disabled(testSignal.isEmpty)
-#endif
         }
         .padding()
     }
