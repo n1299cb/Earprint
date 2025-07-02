@@ -26,7 +26,6 @@ struct SetupView: View {
     @State private var playbackDevices: [AudioDevice] = []
     @State private var recordingDevices: [AudioDevice] = []
     @State private var showMapping = false
-    @State private var measurementDirValid: Bool = true
     @State private var testSignalValid: Bool = true
     @State private var inputLevel: Double = 0
     @State private var outputLevel: Double = 0
@@ -42,16 +41,29 @@ struct SetupView: View {
         VStack(alignment: .leading) {
             Form {
                 HStack {
-                    TextField("Measurement directory", text: $measurementDir)
-                        .overlay(RoundedRectangle(cornerRadius: 4)
-                            .stroke(measurementDirValid ? Color.green : Color.red))
-                        .onChange(of: measurementDir) { _ in validatePaths() }
-                Button("Browse") {
-                    if let path = openPanel(directory: true, startPath: measurementDir) {
-                        measurementDir = path
+                    Text("Measurement directory:")
+                    Text(measurementDir)
+                        .font(.system(.body, design: .monospaced))
+                    Spacer()
+                    Button("Save…") {
+                        if let files = selectFilesPanel(startPath: measurementDir),
+                           !files.isEmpty,
+                           let path = saveDirectoryPanel(startPath: measurementDir) {
+                            do {
+                                try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+                                for src in files {
+                                    let name = URL(fileURLWithPath: src).lastPathComponent
+                                    let dst = URL(fileURLWithPath: path).appendingPathComponent(name).path
+                                    try FileManager.default.copyItem(atPath: src, toPath: dst)
+                                }
+                                measurementDir = path
+                                validatePaths()
+                            } catch {
+                                viewModel.log += "Failed to save measurement: \(error)\n"
+                            }
+                        }
                     }
                 }
-            }
             HStack {
                 TextField("Test signal", text: $testSignal)
                     .overlay(RoundedRectangle(cornerRadius: 4)
@@ -84,17 +96,9 @@ struct SetupView: View {
             TextField("Target Level", text: $targetLevel)
             HStack {
                 Button("Layout Wizard") {
-                    guard measurementDirValid else {
-                        viewModel.log += "Please select a valid measurement directory before running Layout Wizard\n"
-                        return
-                    }
                     viewModel.layoutWizard(layout: selectedLayout, dir: measurementDir)
                 }
                 Button("Capture Wizard") {
-                    guard measurementDirValid else {
-                        viewModel.log += "Please select a valid measurement directory before running Capture Wizard\n"
-                        return
-                    }
                     viewModel.captureWizard(layout: selectedLayout, dir: measurementDir)
                 }
                 Button("Map Channels") {
@@ -140,16 +144,14 @@ struct SetupView: View {
         .onAppear(perform: loadLayouts)
         .onAppear(perform: loadDevices)
         .onAppear(perform: validatePaths)
-        .sheet(isPresented: $showMapping) {
+        .sheet(isPresented: $showMapping, content: {
             mappingSheet
-        }
+        })
     }
     }
 
 
     func validatePaths() {
-        var isDir: ObjCBool = false
-        measurementDirValid = FileManager.default.fileExists(atPath: measurementDir, isDirectory: &isDir) && isDir.boolValue
         testSignalValid = FileManager.default.fileExists(atPath: testSignal)
     }
 
@@ -241,21 +243,25 @@ struct SetupView: View {
 #if os(macOS)
             let (caDevices, defaultInput, defaultOutput) = CoreAudioUtils.queryDevices()
             if !caDevices.isEmpty {
-                let all = caDevices.enumerated().map { idx, d in
-                    AudioDevice(id: idx, name: d.name, maxOutput: d.maxOutput, maxInput: d.maxInput)
+                let all = caDevices.map { d in
+                    AudioDevice(id: Int(d.deviceID), name: d.name, maxOutput: d.maxOutput, maxInput: d.maxInput)
                 }
                 DispatchQueue.main.async {
                     self.playbackDevices = all.filter { $0.maxOutput > 0 }
                     self.recordingDevices = all.filter { $0.maxInput > 0 }
                     if self.playbackDevice.isEmpty, let def = defaultOutput,
-                       let idx = caDevices.firstIndex(where: { $0.deviceID == def }),
-                       let dev = self.playbackDevices.first(where: { $0.id == idx }) {
+                       let dev = self.playbackDevices.first(where: { $0.id == Int(def) }) {
                         self.playbackDevice = String(dev.id)
                     }
                     if self.recordingDevice.isEmpty, let def = defaultInput,
-                       let idx = caDevices.firstIndex(where: { $0.deviceID == def }),
-                       let dev = self.recordingDevices.first(where: { $0.id == idx }) {
+                       let dev = self.recordingDevices.first(where: { $0.id == Int(def) }) {
                         self.recordingDevice = String(dev.id)
+                    }
+                    if !self.playbackDevices.contains(where: { String($0.id) == self.playbackDevice }) {
+                        self.playbackDevice = self.playbackDevices.first.map { String($0.id) } ?? ""
+                    }
+                    if !self.recordingDevices.contains(where: { String($0.id) == self.recordingDevice }) {
+                        self.recordingDevice = self.recordingDevices.first.map { String($0.id) } ?? ""
                     }
                 }
                 return
@@ -314,6 +320,12 @@ struct SetupView: View {
                 if self.recordingDevice.isEmpty, defaults[0] >= 0,
                    let dev = self.recordingDevices.first(where: { $0.id == defaults[0] }) {
                     self.recordingDevice = String(dev.id)
+                }
+                if !self.playbackDevices.contains(where: { String($0.id) == self.playbackDevice }) {
+                    self.playbackDevice = self.playbackDevices.first.map { String($0.id) } ?? ""
+                }
+                if !self.recordingDevices.contains(where: { String($0.id) == self.recordingDevice }) {
+                    self.recordingDevice = self.recordingDevices.first.map { String($0.id) } ?? ""
                 }
             }
         }
@@ -385,7 +397,7 @@ struct SetupView: View {
             recordingChannels: rChannels,
             speakerLabels: labels,
             channelMapping: $channelMapping,
-            onSave: { showMapping = false }
+            isPresented: $showMapping
         )
         .frame(minWidth: 300, minHeight: 200)
     }

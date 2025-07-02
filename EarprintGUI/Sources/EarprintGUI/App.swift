@@ -14,7 +14,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct EarprintApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var measurementDir: String = ""
+    private static func createTempDir() -> String {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Earprint-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url.path
+    }
+    @State private var measurementDir: String
     @State private var testSignal: String = ""
     @State private var channelBalance: String = ""
     @State private var targetLevel: String = ""
@@ -45,6 +51,10 @@ struct EarprintApp: App {
     @State private var interactiveDelays: Bool = false
     @StateObject private var processingVM = ProcessingViewModel()
     @State private var selectedTab: Int = 0
+
+    init() {
+        _measurementDir = State(initialValue: EarprintApp.createTempDir())
+    }
 
     var body: some Scene {
         WindowGroup {

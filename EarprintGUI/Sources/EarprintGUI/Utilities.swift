@@ -3,14 +3,21 @@ import Foundation
 import AppKit
 #endif
 
-/// Root directory of the repository.
-let repoRoot = URL(fileURLWithPath: #filePath)
+/// Root directory of the package.
+///
+/// When built as part of the full project the repository root may sit one
+/// level above the package directory.  In this repository the scripts reside in
+/// `EarprintGUI/Scripts`, so derive the package root and append the Scripts
+/// folder to form `scriptsRoot`.
+let packageRoot = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent() // Utilities.swift
     .deletingLastPathComponent() // EarprintGUI
     .deletingLastPathComponent() // Sources
-    .deletingLastPathComponent() // EarprintGUI package
+/// Root directory of the repository (one level above the package)
+let repoRoot = packageRoot.deletingLastPathComponent()
 /// Directory containing bundled scripts.
-let scriptsRoot = Bundle.module.resourceURL ?? repoRoot
+let scriptsRoot = (Bundle.module.resourceURL ?? packageRoot)
+    .appendingPathComponent("Scripts")
 
 /// URL to the bundled Python interpreter if present.
 let embeddedPythonURL: URL? = Bundle.module
@@ -53,5 +60,26 @@ func openPanel(directory: Bool, startPath: String) -> String? {
         }
     }
     return panel.runModal() == .OK ? panel.url?.path : nil
+}
+
+/// Present an NSSavePanel for choosing a directory to create or overwrite.
+@MainActor
+func saveDirectoryPanel(startPath: String) -> String? {
+    let panel = NSSavePanel()
+    panel.canCreateDirectories = true
+    panel.nameFieldStringValue = "Measurements"
+    panel.directoryURL = URL(fileURLWithPath: startPath)
+    return panel.runModal() == .OK ? panel.url?.path : nil
+}
+
+/// Present an NSOpenPanel to choose multiple files for export.
+@MainActor
+func selectFilesPanel(startPath: String) -> [String]? {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = true
+    panel.directoryURL = URL(fileURLWithPath: startPath)
+    return panel.runModal() == .OK ? panel.urls.map { $0.path } : nil
 }
 #endif
