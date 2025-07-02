@@ -8,6 +8,7 @@ struct ChannelMappingView: View {
     var playbackDevice: String
     var speakerLabels: [String]
     @Binding var channelMapping: [String: [Int]]
+    @Binding var isPresented: Bool
     var onSave: () -> Void = {}
 
     private var mappingCompatible: Bool {
@@ -35,12 +36,14 @@ struct ChannelMappingView: View {
          speakerLabels: [String],
          playbackDevice: String,
          channelMapping: Binding<[String: [Int]]>,
+         isPresented: Binding<Bool>,
          onSave: @escaping () -> Void = {}) {
         self.playbackChannels = playbackChannels
         self.recordingChannels = recordingChannels
         self.speakerLabels = speakerLabels
         self.playbackDevice = playbackDevice
         self._channelMapping = channelMapping
+        self._isPresented = isPresented
         self.onSave = onSave
         _speakerSelections = State(initialValue: channelMapping.wrappedValue["output_channels"] ?? Array(0..<speakerLabels.count))
         _micSelections = State(initialValue: channelMapping.wrappedValue["input_channels"] ?? [0, 1])
@@ -129,6 +132,7 @@ struct ChannelMappingView: View {
             HStack {
                 if channelWarning != nil {
                     Button("Close") {
+                        isPresented = false
                         dismiss()
                     }
                 }
@@ -136,6 +140,7 @@ struct ChannelMappingView: View {
                     channelMapping["output_channels"] = speakerSelections
                     channelMapping["input_channels"] = micSelections
                     onSave()
+                    isPresented = false
                     dismiss()
                 }
                 .disabled(!mappingCompatible)
