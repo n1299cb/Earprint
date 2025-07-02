@@ -2,12 +2,17 @@
 import SwiftUI
 
 struct ChannelMappingView: View {
+    @Environment(\.dismiss) private var dismiss
     var playbackChannels: Int
     var recordingChannels: Int
     var speakerLabels: [String]
     @Binding var channelMapping: [String: [Int]]
     @Binding var isPresented: Bool
     var onSave: () -> Void = {}
+
+    private var mappingCompatible: Bool {
+        playbackChannels >= speakerLabels.count && recordingChannels >= 2
+    }
 
     private var channelWarning: String? {
         var warnings: [String] = []
@@ -83,11 +88,21 @@ struct ChannelMappingView: View {
                 Text(warning)
                     .foregroundColor(.red)
             }
-            Button("Save") {
-                channelMapping["output_channels"] = speakerSelections
-                channelMapping["input_channels"] = micSelections
-                onSave()
-                isPresented = false
+            HStack {
+                if channelWarning != nil {
+                    Button("Close") {
+                        isPresented = false
+                        dismiss()
+                    }
+                }
+                Button("Save") {
+                    channelMapping["output_channels"] = speakerSelections
+                    channelMapping["input_channels"] = micSelections
+                    onSave()
+                    isPresented = false
+                    dismiss()
+                }
+                .disabled(!mappingCompatible)
             }
         }
         .padding()
