@@ -147,6 +147,7 @@ struct SetupView: View {
         .onChange(of: measurementDir) { _ in validatePaths() }
         .onChange(of: selectedLayout) { _ in validateChannelCount() }
         .onChange(of: playbackDevice) { _ in validateChannelCount() }
+        .onChange(of: recordingDevice) { _ in validateChannelCount() }
         .sheet(isPresented: $showMapping, content: {
             mappingSheet
         })
@@ -168,11 +169,17 @@ struct SetupView: View {
     func validateChannelCount() {
         let spkCount = fetchSpeakerLabels(layout: selectedLayout).count
         let pChans = playbackDevices.first(where: { String($0.id) == playbackDevice })?.maxOutput ?? 0
+        let rChans = recordingDevices.first(where: { String($0.id) == recordingDevice })?.maxInput ?? 0
+
+        var warnings: [String] = []
         if pChans < spkCount && spkCount > 0 {
-            channelWarning = "Playback device only has \(pChans) channels while layout requires \(spkCount)."
-        } else {
-            channelWarning = ""
+            warnings.append("Playback device only has \(pChans) channels while layout requires \(spkCount).")
         }
+        if rChans < 2 {
+            let suffix = rChans == 1 ? "" : "s"
+            warnings.append("Recording device only has \(rChans) channel\(suffix); two are required.")
+        }
+        channelWarning = warnings.joined(separator: "\n")
     }
 
     // openPanel and scriptPath helpers are provided by Utilities.swift

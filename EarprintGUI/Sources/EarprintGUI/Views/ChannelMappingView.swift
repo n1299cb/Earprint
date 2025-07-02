@@ -10,8 +10,15 @@ struct ChannelMappingView: View {
     var onSave: () -> Void = {}
 
     private var channelWarning: String? {
-        playbackChannels < speakerLabels.count && !speakerLabels.isEmpty ?
-            "Playback device only has \(playbackChannels) channels while layout requires \(speakerLabels.count)." : nil
+        var warnings: [String] = []
+        if playbackChannels < speakerLabels.count && !speakerLabels.isEmpty {
+            warnings.append("Playback device only has \(playbackChannels) channels while layout requires \(speakerLabels.count).")
+        }
+        if recordingChannels < 2 {
+            let suffix = recordingChannels == 1 ? "" : "s"
+            warnings.append("Recording device only has \(recordingChannels) channel\(suffix); two are required.")
+        }
+        return warnings.isEmpty ? nil : warnings.joined(separator: "\n")
     }
 
     @State private var speakerSelections: [Int]
