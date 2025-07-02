@@ -37,6 +37,7 @@ struct SetupView: View {
     @State private var outputPipe: Pipe? = nil
 
     @State private var layouts: [String] = []
+    @State private var channelWarning: String = ""
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -104,6 +105,10 @@ struct SetupView: View {
                 }
                 Button("Auto Map") { autoMapChannels() }
             }
+            if !channelWarning.isEmpty {
+                Text(channelWarning)
+                    .foregroundColor(.red)
+            }
             HStack {
                 Text("Input Level")
                 ProgressView(value: inputLevel)
@@ -138,7 +143,10 @@ struct SetupView: View {
         .onAppear(perform: loadLayouts)
         .onAppear(perform: loadDevices)
         .onAppear(perform: validatePaths)
+        .onAppear(perform: validateChannelCount)
         .onChange(of: measurementDir) { _ in validatePaths() }
+        .onChange(of: selectedLayout) { _ in validateChannelCount() }
+        .onChange(of: playbackDevice) { _ in validateChannelCount() }
         .sheet(isPresented: $showMapping, content: {
             mappingSheet
         })
@@ -154,6 +162,17 @@ struct SetupView: View {
     func validatePaths() {
         testSignalValid = FileManager.default.fileExists(atPath: testSignal)
         recordingVM.validatePaths(measurementDir)
+        validateChannelCount()
+    }
+
+    func validateChannelCount() {
+        let spkCount = fetchSpeakerLabels(layout: selectedLayout).count
+        let pChans = playbackDevices.first(where: { String($0.id) == playbackDevice })?.maxOutput ?? 0
+        if pChans < spkCount && spkCount > 0 {
+            channelWarning = "Playback device only has \(pChans) channels while layout requires \(spkCount)."
+        } else {
+            channelWarning = ""
+        }
     }
 
     // openPanel and scriptPath helpers are provided by Utilities.swift
@@ -261,12 +280,13 @@ struct SetupView: View {
                     if !self.playbackDevices.contains(where: { String($0.id) == self.playbackDevice }) {
                         self.playbackDevice = self.playbackDevices.first.map { String($0.id) } ?? ""
                     }
-                    if !self.recordingDevices.contains(where: { String($0.id) == self.recordingDevice }) {
-                        self.recordingDevice = self.recordingDevices.first.map { String($0.id) } ?? ""
-                    }
+                if !self.recordingDevices.contains(where: { String($0.id) == self.recordingDevice }) {
+                    self.recordingDevice = self.recordingDevices.first.map { String($0.id) } ?? ""
                 }
-                return
+                self.validateChannelCount()
             }
+            return
+        }
 #endif
             let process = Process()
             process.currentDirectoryURL = scriptsRoot
@@ -328,6 +348,7 @@ struct SetupView: View {
                 if !self.recordingDevices.contains(where: { String($0.id) == self.recordingDevice }) {
                     self.recordingDevice = self.recordingDevices.first.map { String($0.id) } ?? ""
                 }
+                self.validateChannelCount()
             }
         }
     }
@@ -365,6 +386,7 @@ struct SetupView: View {
                     if self.selectedLayout.isEmpty, let first = arr.first {
                         self.selectedLayout = first
                     }
+                    self.validateChannelCount()
                 }
             } else {
                 DispatchQueue.main.async {

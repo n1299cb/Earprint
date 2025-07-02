@@ -9,6 +9,11 @@ struct ChannelMappingView: View {
     @Binding var isPresented: Bool
     var onSave: () -> Void = {}
 
+    private var channelWarning: String? {
+        playbackChannels < speakerLabels.count && !speakerLabels.isEmpty ?
+            "Playback device only has \(playbackChannels) channels while layout requires \(speakerLabels.count)." : nil
+    }
+
     @State private var speakerSelections: [Int]
     @State private var micSelections: [Int]
 
@@ -66,6 +71,10 @@ struct ChannelMappingView: View {
             HStack {
                 speakerSection
                 microphoneSection
+            }
+            if let warning = channelWarning {
+                Text(warning)
+                    .foregroundColor(.red)
             }
             Button("Save") {
                 channelMapping["output_channels"] = speakerSelections
