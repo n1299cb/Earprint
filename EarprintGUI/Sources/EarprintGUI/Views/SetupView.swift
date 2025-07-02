@@ -42,7 +42,8 @@ struct SetupView: View {
             Form {
                 HStack {
                     Text("Measurement directory:")
-                    Text(measurementDir)
+                    // Do not display the full path to avoid exposing the user's file system
+                    Text("Path Hidden")
                         .font(.system(.body, design: .monospaced))
                     Spacer()
                     Button("Save…") {
