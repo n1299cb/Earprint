@@ -27,7 +27,7 @@ struct SetupView: View {
     @State private var recordingDevices: [AudioDevice] = []
     @State private var showMapping = false
     @State private var testSignalValid: Bool = true
-    @State private var measurementHasFiles: Bool = false
+    @StateObject private var recordingVM = RecordingViewModel()
     @State private var inputLevel: Double = 0
     @State private var outputLevel: Double = 0
     @State private var isMonitoring: Bool = false
@@ -42,32 +42,24 @@ struct SetupView: View {
         VStack(alignment: .leading) {
             Form {
                 HStack {
-                    Text("Measurement directory:")
-                    // Do not display the full path to avoid exposing the user's file system
-                    Text("Path Hidden")
+                    Text("Latest Recording:")
+                    TextField("No recordings", text: $recordingVM.recordingName)
                         .font(.system(.body, design: .monospaced))
                     Spacer()
                     Button("Save…") {
-                        if let files = selectFilesPanel(startPath: measurementDir),
-                           !files.isEmpty,
-                           let path = saveDirectoryPanel(startPath: measurementDir) {
-                            do {
-                                try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
-                                for src in files {
-                                    let name = URL(fileURLWithPath: src).lastPathComponent
-                                    let dst = URL(fileURLWithPath: path).appendingPathComponent(name).path
-                                    try FileManager.default.copyItem(atPath: src, toPath: dst)
-                                }
-                                measurementDir = path
-                                validatePaths()
-                            } catch {
-                                viewModel.log += "Failed to save measurement: \(error)\n"
-                            }
-                        } else {
-                            viewModel.log += "No measurement files found to save.\n"
+                        guard let files = selectFilesPanel(startPath: measurementDir),
+                              !files.isEmpty,
+                              let path = saveDirectoryPanel(startPath: measurementDir) else {
+                            viewModel.logMessage("No measurement files found to save.\n")
+                            return
                         }
+                        recordingVM.saveFiles(files: files,
+                                              measurementDir: measurementDir,
+                                              destination: path) { viewModel.logMessage($0) }
+                        measurementDir = path
+                        validatePaths()
                     }
-                    .disabled(!measurementHasFiles)
+                    .disabled(!recordingVM.measurementHasFiles)
                 }
             HStack {
                 TextField("Test signal", text: $testSignal)
@@ -153,17 +145,18 @@ struct SetupView: View {
         .sheet(isPresented: $showMapping, content: {
             mappingSheet
         })
+        .alert("Error", isPresented: $recordingVM.showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(recordingVM.errorMessage)
+        }
     }
     }
 
 
     func validatePaths() {
         testSignalValid = FileManager.default.fileExists(atPath: testSignal)
-        if let items = try? FileManager.default.contentsOfDirectory(atPath: measurementDir) {
-            measurementHasFiles = items.contains { !$0.hasPrefix(".") }
-        } else {
-            measurementHasFiles = false
-        }
+        recordingVM.validatePaths(measurementDir)
     }
 
     // openPanel and scriptPath helpers are provided by Utilities.swift
@@ -444,5 +437,6 @@ struct SetupView: View {
         }
         return []
     }
+
 }
 #endif

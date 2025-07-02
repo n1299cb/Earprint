@@ -221,6 +221,11 @@ final class ProcessingViewModel: ObservableObject {
         }
     }
 
+    /// Expose logging for other view models.
+    func logMessage(_ text: String) {
+        appendLog(text)
+    }
+
     func clearLog() {
         log = ""
     }

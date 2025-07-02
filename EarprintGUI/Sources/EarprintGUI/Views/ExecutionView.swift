@@ -35,6 +35,8 @@ struct ExecutionView: View {
     var micCalibration: String
     var interactiveDelays: Bool
 
+    @StateObject private var recordingVM = RecordingViewModel()
+
     var body: some View {
         VStack(alignment: .leading) {
             HStack {
@@ -97,6 +99,19 @@ struct ExecutionView: View {
                 }
             }
 
+            HStack {
+                Text("Latest Recording:")
+                TextField("No recordings", text: $recordingVM.recordingName)
+                    .font(.system(.body, design: .monospaced))
+                Spacer()
+                Button("Save…") {
+                    if let path = saveDirectoryPanel(startPath: measurementDir) {
+                        recordingVM.saveLatest(from: measurementDir, to: path) { viewModel.logMessage($0) }
+                    }
+                }
+                .disabled(!recordingVM.measurementHasFiles || recordingVM.latestRecording.isEmpty)
+            }
+
             if viewModel.isRunning {
                 if let progress = viewModel.progress {
                     ProgressView(value: progress)
@@ -135,9 +150,18 @@ struct ExecutionView: View {
             }
         }
         .padding()
+        .onAppear(perform: validatePaths)
+        .onChange(of: viewModel.isRunning) { running in
+            if !running { validatePaths() }
+        }
+        .alert("Error", isPresented: $recordingVM.showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(recordingVM.errorMessage)
+        }
     }
 
-    func savePanel(startPath: String) -> URL? {
+func savePanel(startPath: String) -> URL? {
         #if canImport(AppKit)
         let panel = NSSavePanel()
         panel.directoryURL = URL(fileURLWithPath: startPath)
@@ -145,6 +169,10 @@ struct ExecutionView: View {
         #else
         return nil
         #endif
+    }
+
+    func validatePaths() {
+        recordingVM.validatePaths(measurementDir)
     }
 }
 #endif
