@@ -1,0 +1,14 @@
+Metadata-Version: 2.1
+Name: nnresample
+Version: 0.2.4.1
+Summary: A resampling function based on placing the first null on Nyquist (Null-on-Nyquist Resample)
+Home-page: https://github.com/jthiem/nnresample
+Author: Joachim Thiemann
+Author-email: Joachim.Thiemann@gmail.com
+License: MIT
+Platform: UNKNOWN
+Requires-Dist: scipy (<2.0.0,>=0.18.0)
+
+UNKNOWN
+
+
