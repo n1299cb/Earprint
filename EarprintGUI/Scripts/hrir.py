@@ -4,6 +4,7 @@
 
 import os
 import warnings
+import csv
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal, fftpack
@@ -540,6 +541,15 @@ class HRIR:
                     im = Image.open(file_path)
                     im = im.convert("P", palette=Image.ADAPTIVE, colors=60)
                     im.save(file_path, optimize=True)
+                    # Export frequency response for Swift Charts
+                    fr = ir.frequency_response()
+                    fr.smoothen_fractional_octave(window_size=1 / 3, treble_f_lower=20000, treble_f_upper=23999)
+                    csv_path = os.path.join(dir_path, f"{speaker}-{side}.csv")
+                    with open(csv_path, "w", newline="") as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(["frequency", "amplitude"])
+                        for f, a in zip(fr.frequency, fr.smoothed):
+                            writer.writerow([f, a])
 
         # Close plots
         if close_plots:
@@ -592,6 +602,13 @@ class HRIR:
         im = Image.open(file_path)
         im = im.convert("P", palette=Image.ADAPTIVE, colors=60)
         im.save(file_path, optimize=True)
+        # Export CSV data for Charts
+        csv_path = os.path.join(dir_path, "results.csv")
+        with open(csv_path, "w", newline="") as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["frequency", "left", "right", "difference"])
+            for f, l, r in zip(left_fr.frequency, left_fr.smoothed, right_fr.smoothed):
+                writer.writerow([f, l, r, l - r])
 
     def equalize(self, fir):
         """Equalizes all impulse responses with given FIR filters.

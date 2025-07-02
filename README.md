@@ -73,6 +73,10 @@ The `Scripts` directory exposes a few utilities that can also be used outside th
 - `generate_layout.py` – helper that creates a capture folder and README listing
   the expected sweep files.
 
+Each processing run also writes CSV data to the measurement's `plots`
+directory. These files contain frequency responses for visualization in the
+SwiftUI Charts view.
+
 ## Running the tests
 
 The Python tests live under `EarprintGUI/Scripts/tests`. After installing the
