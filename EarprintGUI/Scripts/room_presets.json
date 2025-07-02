@@ -1,0 +1,15 @@
+{
+  "None": {},
+  "Studio": {
+    "brir_dir": "data/studio_brirs",
+    "measurement_dir": "data/studio_measurements",
+    "notes": "Treated studio environment with nearfield monitors.",
+    "measurement_date": ""
+  },
+  "Home Theater": {
+    "brir_dir": "data/demo",
+    "measurement_dir": "data/demo",
+    "notes": "Sample living room capture provided with Earprint.",
+    "measurement_date": "2020-08-01"
+  }
+}

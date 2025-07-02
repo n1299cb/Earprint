@@ -1,0 +1,25 @@
+{
+  "None": {},
+  "Balanced Processing": {
+    "measurement_dir": "data/demo",
+    "test_signal": "data/sweep-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav",
+    "channel_balance_enabled": true,
+    "channel_balance": "avg",
+    "enable_compensation": true,
+    "headphone_eq_enabled": true,
+    "headphone_file": "data/headphones.wav",
+    "compensation_type": "diffuse-field",
+    "layout": "9.1.6"
+  },
+  "Calibrated Room Correction": {
+    "measurement_dir": "data/demo",
+    "test_signal": "data/sweep-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav",
+    "room_correction": true,
+    "room_target": "data/harman-in-room-loudspeaker-target.csv",
+    "mic_calibration": "data/demo/room-mic-calibration.txt",
+    "enable_compensation": true,
+    "headphone_eq_enabled": true,
+    "headphone_file": "data/headphones.wav",
+    "compensation_type": "diffuse-field"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "None": {},
+  "Low Latency": {
+    "brir_dir": "data/demo",
+    "tracking_calibration": "",
+    "output_routing": [0, 1],
+    "latency": 64,
+    "headphone_file": "",
+    "playback_device": ""
+  },
+  "Default Headphones": {
+    "brir_dir": "data/demo",
+    "tracking_calibration": "data/tracking_calibration.json",
+    "output_routing": [0, 1],
+    "latency": 128,
+    "headphone_file": "",
+    "playback_device": ""
+  }
+}
