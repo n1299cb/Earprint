@@ -1,6 +1,7 @@
 # See NOTICE.md for license and attribution details.
 
 import os
+import struct
 import numpy as np
 import soundfile as sf
 from scipy.fftpack import fft
@@ -32,8 +33,16 @@ def read_wav(file_path, expand=False):
     return fs, data
 
 
-def write_wav(file_path, fs, data, bit_depth=32):
-    """Writes WAV file."""
+def write_wav(file_path, fs, data, bit_depth=32, comment=None):
+    """Writes WAV file.
+
+    Args:
+        file_path: Output path
+        fs: Sampling rate
+        data: Audio data (tracks on rows)
+        bit_depth: Bit depth for the file
+        comment: Optional comment string stored as WAV metadata
+    """
     if bit_depth == 16:
         subtype = "PCM_16"
     elif bit_depth == 24:
@@ -46,7 +55,27 @@ def write_wav(file_path, fs, data, bit_depth=32):
         # We have tracks on rows, soundfile want"s them on columns
         data = np.transpose(data)
     sf.write(file_path, data, samplerate=fs, subtype=subtype)
+    if comment:
+        add_wav_comment(file_path, comment)
 
+
+def add_wav_comment(file_path, comment):
+    """Append a LIST/INFO chunk with an ICMT comment."""
+    comment_bytes = comment.encode("utf-8")
+    if len(comment_bytes) % 2 == 1:
+        comment_bytes += b"\x00"
+    subchunk = b"ICMT" + struct.pack("<I", len(comment_bytes)) + comment_bytes
+    list_data = b"INFO" + subchunk
+    list_chunk = b"LIST" + struct.pack("<I", len(list_data)) + list_data
+    with open(file_path, "rb+") as f:
+        f.seek(0, os.SEEK_END)
+        file_size = f.tell()
+        f.seek(4)
+        riff_size = struct.unpack("<I", f.read(4))[0]
+        f.seek(4)
+        f.write(struct.pack("<I", riff_size + len(list_chunk)))
+        f.seek(0, os.SEEK_END)
+        f.write(list_chunk)
 
 def magnitude_response(x, fs):
     """Calculates frequency magnitude response

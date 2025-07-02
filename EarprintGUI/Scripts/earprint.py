@@ -60,6 +60,8 @@ def main(
     if dir_path is None or not os.path.isdir(dir_path):
         raise NotADirectoryError(f'Given dir path "{dir_path}"" is not a directory.')
 
+    metadata_comment = "Capture includes SMPTE X-Curve" if x_curve_in_capture else None
+
     # Dir path as absolute
     dir_path = os.path.abspath(dir_path)
 
@@ -111,7 +113,7 @@ def main(
     hp_left, hp_right = None, None
     if do_headphone_compensation:
         print("Running headphone compensation...")
-        hp_left, hp_right = headphone_compensation(estimator, dir_path)
+        hp_left, hp_right = headphone_compensation(estimator, dir_path, comment=metadata_comment)
 
     # Equalization
     eq_left, eq_right = None, None
@@ -161,7 +163,7 @@ def main(
     hrir.crop_tails()
 
     # Write intermediate responses for debugging
-    hrir.write_wav(os.path.join(dir_path, "responses.wav"))
+    hrir.write_wav(os.path.join(dir_path, "responses.wav"), comment=metadata_comment)
 
     # Equalize all
     if do_headphone_compensation or do_room_correction or do_equalization:
@@ -238,10 +240,14 @@ def main(
 
     # Write multi-channel WAV file with standard track order
     print("Writing BRIRs...")
-    hrir.write_wav(os.path.join(dir_path, "hrir.wav"))
+    hrir.write_wav(os.path.join(dir_path, "hrir.wav"), comment=metadata_comment)
 
     # Write multi-channel WAV file with HeSuVi track order
-    hrir.write_wav(os.path.join(dir_path, "hesuvi.wav"), track_order=HESUVI_TRACK_ORDER)
+    hrir.write_wav(
+        os.path.join(dir_path, "hesuvi.wav"),
+        track_order=HESUVI_TRACK_ORDER,
+        comment=metadata_comment,
+    )
 
     print(readme)
 
@@ -262,7 +268,7 @@ def main(
         # Save channels in the order FL-L, FL-R, FR-L, FR-R
         jd_order = ["FL-left", "FL-right", "FR-left", "FR-right"]
         out_path = os.path.join(dir_path, "jamesdsp.wav")
-        dsp_hrir.write_wav(out_path, track_order=jd_order)
+        dsp_hrir.write_wav(out_path, track_order=jd_order, comment=metadata_comment)
 
     if hangloose:
         import numpy as np
@@ -301,7 +307,7 @@ def main(
 
             track_order = [f"{sp}-left", f"{sp}-right"]
             out_path = os.path.join(output_dir, f"{sp}.wav")
-            single.write_wav(out_path, track_order=track_order)
+            single.write_wav(out_path, track_order=track_order, comment=metadata_comment)
             print(f"[Hangloose] Created: {out_path}")
 
         # 2) Read FL.wav and FR.wav to create LFEL.wav and LFER.wav
@@ -419,7 +425,7 @@ def equalization(estimator, dir_path):
     return left_fr, right_fr
 
 
-def headphone_compensation(estimator, dir_path):
+def headphone_compensation(estimator, dir_path, comment=None):
     """Equalizes HRIR tracks with headphone compensation measurement.
 
     Args:
@@ -432,7 +438,7 @@ def headphone_compensation(estimator, dir_path):
     # Read WAV file
     hp_irs = HRIR(estimator)
     hp_irs.open_recording(os.path.join(dir_path, "headphones.wav"), speakers=["FL", "FR"])
-    hp_irs.write_wav(os.path.join(dir_path, "headphone-responses.wav"))
+    hp_irs.write_wav(os.path.join(dir_path, "headphone-responses.wav"), comment=comment)
 
     # Frequency responses
     left = hp_irs.irs["FL"]["left"].frequency_response()

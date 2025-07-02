@@ -100,7 +100,7 @@ class HRIR:
                     )
             i += tracks_k
 
-    def write_wav(self, file_path, track_order=None, bit_depth=32):
+    def write_wav(self, file_path, track_order=None, bit_depth=32, comment=None):
         """Writes impulse responses to a WAV file
 
         Args:
@@ -137,7 +137,7 @@ class HRIR:
         irs = irs[[ir_order.index(ch) for ch in track_order], :]
 
         # Write to file
-        write_wav(file_path, self.fs, irs, bit_depth=bit_depth)
+        write_wav(file_path, self.fs, irs, bit_depth=bit_depth, comment=comment)
 
     def normalize(self, peak_target=-0.1, avg_target=None):
         """Normalizes output gain to target.

@@ -95,9 +95,6 @@ struct SetupView: View {
                 Button("Layout Wizard") {
                     viewModel.layoutWizard(layout: selectedLayout, dir: measurementDir)
                 }
-                Button("Capture Wizard") {
-                    viewModel.captureWizard(layout: selectedLayout, dir: measurementDir)
-                }
                 Button("Map Channels") {
                     if fetchSpeakerLabels(layout: selectedLayout).isEmpty {
                         viewModel.log += "No speaker labels found for layout \(selectedLayout).\n"
