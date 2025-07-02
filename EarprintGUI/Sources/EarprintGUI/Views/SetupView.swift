@@ -75,12 +75,14 @@ struct SetupView: View {
             }
             Picker("Playback Device", selection: $playbackDevice) {
                 ForEach(playbackDevices) { dev in
-                    Text("\(dev.id): \(dev.name)").tag(String(dev.id))
+                    Text("\(dev.name) (\(dev.maxInput) in / \(dev.maxOutput) out)")
+                        .tag(String(dev.id))
                 }
             }
             Picker("Recording Device", selection: $recordingDevice) {
                 ForEach(recordingDevices) { dev in
-                    Text("\(dev.id): \(dev.name)").tag(String(dev.id))
+                    Text("\(dev.name) (\(dev.maxInput) in / \(dev.maxOutput) out)")
+                        .tag(String(dev.id))
                 }
             }
             Picker("Layout", selection: $selectedLayout) {
