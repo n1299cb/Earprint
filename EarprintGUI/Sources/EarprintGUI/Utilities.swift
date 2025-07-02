@@ -68,7 +68,7 @@ func saveDirectoryPanel(startPath: String) -> String? {
     let panel = NSSavePanel()
     panel.canCreateDirectories = true
     panel.nameFieldStringValue = "Measurements"
-    panel.directoryURL = URL(fileURLWithPath: startPath)
+    panel.directoryURL = URL(fileURLWithPath: startPath, isDirectory: true)
     return panel.runModal() == .OK ? panel.url?.path : nil
 }
 

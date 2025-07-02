@@ -27,6 +27,7 @@ struct SetupView: View {
     @State private var recordingDevices: [AudioDevice] = []
     @State private var showMapping = false
     @State private var testSignalValid: Bool = true
+    @State private var measurementHasFiles: Bool = false
     @State private var inputLevel: Double = 0
     @State private var outputLevel: Double = 0
     @State private var isMonitoring: Bool = false
@@ -62,8 +63,11 @@ struct SetupView: View {
                             } catch {
                                 viewModel.log += "Failed to save measurement: \(error)\n"
                             }
+                        } else {
+                            viewModel.log += "No measurement files found to save.\n"
                         }
                     }
+                    .disabled(!measurementHasFiles)
                 }
             HStack {
                 TextField("Test signal", text: $testSignal)
@@ -145,6 +149,7 @@ struct SetupView: View {
         .onAppear(perform: loadLayouts)
         .onAppear(perform: loadDevices)
         .onAppear(perform: validatePaths)
+        .onChange(of: measurementDir) { _ in validatePaths() }
         .sheet(isPresented: $showMapping, content: {
             mappingSheet
         })
@@ -154,6 +159,11 @@ struct SetupView: View {
 
     func validatePaths() {
         testSignalValid = FileManager.default.fileExists(atPath: testSignal)
+        if let items = try? FileManager.default.contentsOfDirectory(atPath: measurementDir) {
+            measurementHasFiles = items.contains { !$0.hasPrefix(".") }
+        } else {
+            measurementHasFiles = false
+        }
     }
 
     // openPanel and scriptPath helpers are provided by Utilities.swift
