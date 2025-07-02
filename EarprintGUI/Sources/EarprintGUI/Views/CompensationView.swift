@@ -53,14 +53,6 @@ struct CompensationView: View {
                 ForEach(xCurveTypes, id: \.self) { Text($0) }
             }
             Toggle("Capture Includes X-Curve", isOn: $xCurveInCapture)
-            Button("Record Headphone EQ") {
-                viewModel.recordHeadphoneEQ(
-                    measurementDir: measurementDir,
-                    testSignal: testSignal,
-                    playbackDevice: playbackDevice,
-                    recordingDevice: recordingDevice
-                )
-            }
         }
         .padding()
     }
