@@ -85,39 +85,41 @@ struct EarprintApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if #available(macOS 13, *) {
-                NavigationSplitView {
-                    List(Section.allCases, selection: $selectedSection) { section in
-                        Label(section.rawValue, systemImage: section.icon)
-                            .tag(section)
-                    }
-                    .frame(minWidth: 150)
-                } detail: {
-                    if let section = selectedSection {
-                        detailView(for: section)
-                    } else {
-                        Text("Select a section")
-                    }
-                }
-                .frame(minWidth: 600, minHeight: 400)
-            } else {
-                NavigationView {
-                    List(selection: $selectedSection) {
-                        ForEach(Section.allCases) { section in
-                            NavigationLink(destination: detailView(for: section), tag: section, selection: $selectedSection) {
-                                Label(section.rawValue, systemImage: section.icon)
-                            }
+            Group {
+                if #available(macOS 13, *) {
+                    NavigationSplitView {
+                        List(Section.allCases, selection: $selectedSection) { section in
+                            Label(section.rawValue, systemImage: section.icon)
+                                .tag(section)
+                        }
+                        .frame(minWidth: 150)
+                    } detail: {
+                        if let section = selectedSection {
+                            detailView(for: section)
+                        } else {
+                            Text("Select a section")
                         }
                     }
-                    .frame(minWidth: 150)
-                    .listStyle(SidebarListStyle())
-                    if let section = selectedSection {
-                        detailView(for: section)
-                    } else {
-                        Text("Select a section")
+                    .frame(minWidth: 600, minHeight: 400)
+                } else {
+                    NavigationView {
+                        List(selection: $selectedSection) {
+                            ForEach(Section.allCases) { section in
+                                NavigationLink(destination: detailView(for: section), tag: section, selection: $selectedSection) {
+                                    Label(section.rawValue, systemImage: section.icon)
+                                }
+                            }
+                        }
+                        .frame(minWidth: 150)
+                        .listStyle(SidebarListStyle())
+                        if let section = selectedSection {
+                            detailView(for: section)
+                        } else {
+                            Text("Select a section")
+                        }
                     }
+                    .frame(minWidth: 600, minHeight: 400)
                 }
-                .frame(minWidth: 600, minHeight: 400)
             }
             .onAppear {
                 selectedSection = Section(rawValue: lastSectionRaw)
