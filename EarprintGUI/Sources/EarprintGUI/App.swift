@@ -64,7 +64,7 @@ struct EarprintApp: App {
         var id: Self { self }
     }
 
-    @State private var selectedSection: Section = .setup
+    @State private var selectedSection: Section? = nil
 
     init() {
         _measurementDir = State(initialValue: EarprintApp.createTempDir())
@@ -73,15 +73,51 @@ struct EarprintApp: App {
     var body: some Scene {
         WindowGroup {
             NavigationView {
-                List(selection: $selectedSection) {
-                    ForEach(Section.allCases) { section in
-                        Text(section.rawValue)
-                            .tag(section)
+                List {
+                    NavigationLink(destination: detailView(for: .setup),
+                                   tag: Section.setup,
+                                   selection: $selectedSection) {
+                        Text(Section.setup.rawValue)
+                    }
+                    NavigationLink(destination: detailView(for: .execution),
+                                   tag: Section.execution,
+                                   selection: $selectedSection) {
+                        Text(Section.execution.rawValue)
+                    }
+                    NavigationLink(destination: detailView(for: .postProcessing),
+                                   tag: Section.postProcessing,
+                                   selection: $selectedSection) {
+                        Text(Section.postProcessing.rawValue)
+                    }
+                    NavigationLink(destination: detailView(for: .roomResponse),
+                                   tag: Section.roomResponse,
+                                   selection: $selectedSection) {
+                        Text(Section.roomResponse.rawValue)
+                    }
+                    NavigationLink(destination: detailView(for: .presets),
+                                   tag: Section.presets,
+                                   selection: $selectedSection) {
+                        Text(Section.presets.rawValue)
+                    }
+                    NavigationLink(destination: detailView(for: .profiles),
+                                   tag: Section.profiles,
+                                   selection: $selectedSection) {
+                        Text(Section.profiles.rawValue)
+                    }
+                    NavigationLink(destination: detailView(for: .rooms),
+                                   tag: Section.rooms,
+                                   selection: $selectedSection) {
+                        Text(Section.rooms.rawValue)
+                    }
+                    NavigationLink(destination: detailView(for: .visualization),
+                                   tag: Section.visualization,
+                                   selection: $selectedSection) {
+                        Text(Section.visualization.rawValue)
                     }
                 }
                 .frame(minWidth: 150)
                 .listStyle(SidebarListStyle())
-                detailView(for: selectedSection)
+                Text("Select a section")
             }
             .frame(minWidth: 600, minHeight: 400)
         }
