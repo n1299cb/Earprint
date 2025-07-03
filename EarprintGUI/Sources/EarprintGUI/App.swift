@@ -103,12 +103,35 @@ struct EarprintApp: App {
                               interactiveDelays: interactiveDelays)
                     .tabItem { Text("Execution") }
                     .tag(1)
-                HeadphoneEQView(viewModel: processingVM,
-                                measurementDir: measurementDir,
-                                testSignal: testSignal,
-                                playbackDevice: playbackDevice,
-                                recordingDevice: recordingDevice)
-                    .tabItem { Text("Headphone EQ") }
+                PostProcessingView(viewModel: processingVM,
+                                   measurementDir: measurementDir,
+                                   testSignal: testSignal,
+                                   playbackDevice: playbackDevice,
+                                   recordingDevice: recordingDevice,
+                                   enableCompensation: $enableCompensation,
+                                   headphoneEqEnabled: $headphoneEqEnabled,
+                                   headphoneFile: $headphoneFile,
+                                   compensationType: $compensationType,
+                                   customCompensationFile: $customCompensationFile,
+                                   diffuseField: $diffuseField,
+                                   xCurveAction: $xCurveAction,
+                                   xCurveType: $xCurveType,
+                                   xCurveInCapture: $xCurveInCapture,
+                                   channelBalance: $channelBalance,
+                                   targetLevel: $targetLevel,
+                                   decayTime: $decayTime,
+                                   decayEnabled: $decayEnabled,
+                                   specificLimit: $specificLimit,
+                                   specificLimitEnabled: $specificLimitEnabled,
+                                   genericLimit: $genericLimit,
+                                   genericLimitEnabled: $genericLimitEnabled,
+                                   frCombinationMethod: $frCombinationMethod,
+                                   frCombinationEnabled: $frCombinationEnabled,
+                                   roomCorrection: $roomCorrection,
+                                   roomTarget: $roomTarget,
+                                   micCalibration: $micCalibration,
+                                   interactiveDelays: $interactiveDelays)
+                    .tabItem { Text("Post-Processing") }
                     .tag(2)
                 RoomResponseView(viewModel: processingVM,
                                  measurementDir: measurementDir,
@@ -117,56 +140,23 @@ struct EarprintApp: App {
                                  recordingDevice: recordingDevice)
                     .tabItem { Text("Room Response") }
                     .tag(3)
-                ProcessingOptionsView(channelBalance: $channelBalance,
-                                     targetLevel: $targetLevel,
-                                     testSignal: $testSignal,
-                                     decayTime: $decayTime,
-                                     decayEnabled: $decayEnabled,
-                                     specificLimit: $specificLimit,
-                                     specificLimitEnabled: $specificLimitEnabled,
-                                     genericLimit: $genericLimit,
-                                     genericLimitEnabled: $genericLimitEnabled,
-                                     frCombinationMethod: $frCombinationMethod,
-                                     frCombinationEnabled: $frCombinationEnabled,
-                                     roomCorrection: $roomCorrection,
-                                     roomTarget: $roomTarget,
-                                     micCalibration: $micCalibration,
-                                     interactiveDelays: $interactiveDelays)
-                    .tabItem { Text("Processing Options") }
-                    .tag(4)
-                CompensationView(viewModel: processingVM,
-                                 enableCompensation: $enableCompensation,
-                                 headphoneEqEnabled: $headphoneEqEnabled,
-                                 headphoneFile: $headphoneFile,
-                                 compensationType: $compensationType,
-                                 customCompensationFile: $customCompensationFile,
-                                 diffuseField: $diffuseField,
-                                 xCurveAction: $xCurveAction,
-                                 xCurveType: $xCurveType,
-                                 xCurveInCapture: $xCurveInCapture,
-                                 measurementDir: measurementDir,
-                                 testSignal: testSignal,
-                                 playbackDevice: playbackDevice,
-                                 recordingDevice: recordingDevice)
-                    .tabItem { Text("Compensation") }
-                    .tag(5)
                 PresetView(viewModel: processingVM,
                            measurementDir: measurementDir)
                     .tabItem { Text("Presets") }
-                    .tag(6)
+                    .tag(4)
                 ProfileView(viewModel: processingVM,
                             measurementDir: $measurementDir,
                             headphoneFile: $headphoneFile,
                             playbackDevice: $playbackDevice)
                     .tabItem { Text("Profiles") }
-                    .tag(7)
+                    .tag(5)
                 RoomPresetView(viewModel: processingVM,
                                measurementDir: $measurementDir)
                     .tabItem { Text("Rooms") }
-                    .tag(8)
+                    .tag(6)
                 VisualizationView(measurementDir: measurementDir)
                     .tabItem { Text("Visualization") }
-                    .tag(9)
+                    .tag(7)
             }
             .frame(minWidth: 600, minHeight: 400)
         }
