@@ -50,7 +50,21 @@ struct EarprintApp: App {
     @State private var micCalibration: String = ""
     @State private var interactiveDelays: Bool = false
     @StateObject private var processingVM = ProcessingViewModel()
-    @State private var selectedTab: Int = 0
+
+    enum Section: String, CaseIterable, Identifiable {
+        case setup = "Setup"
+        case execution = "Execution"
+        case postProcessing = "Post-Processing"
+        case roomResponse = "Room Response"
+        case presets = "Presets"
+        case profiles = "Profiles"
+        case rooms = "Rooms"
+        case visualization = "Visualization"
+
+        var id: Self { self }
+    }
+
+    @State private var selectedSection: Section = .setup
 
     init() {
         _measurementDir = State(initialValue: EarprintApp.createTempDir())
@@ -58,105 +72,16 @@ struct EarprintApp: App {
 
     var body: some Scene {
         WindowGroup {
-            TabView(selection: $selectedTab) {
-                SetupView(viewModel: processingVM,
-                          measurementDir: $measurementDir,
-                          testSignal: $testSignal,
-                          channelBalance: $channelBalance,
-                          targetLevel: $targetLevel,
-                          selectedLayout: $selectedLayout,
-                          playbackDevice: $playbackDevice,
-                          recordingDevice: $recordingDevice,
-                          channelMapping: $channelMapping)
-                    .tabItem { Text("Setup") }
-                    .tag(0)
-                ExecutionView(viewModel: processingVM,
-                              measurementDir: measurementDir,
-                              testSignal: testSignal,
-                              channelBalance: channelBalance,
-                              targetLevel: targetLevel,
-                              playbackDevice: playbackDevice,
-                              recordingDevice: recordingDevice,
-                              outputChannels: channelMapping["output_channels"] ?? [],
-                              inputChannels: channelMapping["input_channels"] ?? [],
-                              selectedLayout: selectedLayout,
-                              enableCompensation: $enableCompensation,
-                              headphoneEqEnabled: $headphoneEqEnabled,
-                              headphoneFile: $headphoneFile,
-                              compensationType: $compensationType,
-                              customCompensationFile: $customCompensationFile,
-                              diffuseField: $diffuseField,
-                              xCurveAction: $xCurveAction,
-                              xCurveType: $xCurveType,
-                              xCurveInCapture: $xCurveInCapture,
-                              decayTime: decayTime,
-                              decayEnabled: decayEnabled,
-                              specificLimit: specificLimit,
-                              specificLimitEnabled: specificLimitEnabled,
-                              genericLimit: genericLimit,
-                              genericLimitEnabled: genericLimitEnabled,
-                              frCombinationMethod: frCombinationMethod,
-                              frCombinationEnabled: frCombinationEnabled,
-                              roomCorrection: roomCorrection,
-                              roomTarget: roomTarget,
-                              micCalibration: micCalibration,
-                              interactiveDelays: interactiveDelays)
-                    .tabItem { Text("Execution") }
-                    .tag(1)
-                PostProcessingView(viewModel: processingVM,
-                                   measurementDir: measurementDir,
-                                   testSignal: testSignal,
-                                   playbackDevice: playbackDevice,
-                                   recordingDevice: recordingDevice,
-                                   enableCompensation: $enableCompensation,
-                                   headphoneEqEnabled: $headphoneEqEnabled,
-                                   headphoneFile: $headphoneFile,
-                                   compensationType: $compensationType,
-                                   customCompensationFile: $customCompensationFile,
-                                   diffuseField: $diffuseField,
-                                   xCurveAction: $xCurveAction,
-                                   xCurveType: $xCurveType,
-                                   xCurveInCapture: $xCurveInCapture,
-                                   channelBalance: $channelBalance,
-                                   targetLevel: $targetLevel,
-                                   decayTime: $decayTime,
-                                   decayEnabled: $decayEnabled,
-                                   specificLimit: $specificLimit,
-                                   specificLimitEnabled: $specificLimitEnabled,
-                                   genericLimit: $genericLimit,
-                                   genericLimitEnabled: $genericLimitEnabled,
-                                   frCombinationMethod: $frCombinationMethod,
-                                   frCombinationEnabled: $frCombinationEnabled,
-                                   roomCorrection: $roomCorrection,
-                                   roomTarget: $roomTarget,
-                                   micCalibration: $micCalibration,
-                                   interactiveDelays: $interactiveDelays)
-                    .tabItem { Text("Post-Processing") }
-                    .tag(2)
-                RoomResponseView(viewModel: processingVM,
-                                 measurementDir: measurementDir,
-                                 testSignal: testSignal,
-                                 playbackDevice: playbackDevice,
-                                 recordingDevice: recordingDevice)
-                    .tabItem { Text("Room Response") }
-                    .tag(3)
-                PresetView(viewModel: processingVM,
-                           measurementDir: measurementDir)
-                    .tabItem { Text("Presets") }
-                    .tag(4)
-                ProfileView(viewModel: processingVM,
-                            measurementDir: $measurementDir,
-                            headphoneFile: $headphoneFile,
-                            playbackDevice: $playbackDevice)
-                    .tabItem { Text("Profiles") }
-                    .tag(5)
-                RoomPresetView(viewModel: processingVM,
-                               measurementDir: $measurementDir)
-                    .tabItem { Text("Rooms") }
-                    .tag(6)
-                VisualizationView(measurementDir: measurementDir)
-                    .tabItem { Text("Visualization") }
-                    .tag(7)
+            NavigationView {
+                List(selection: $selectedSection) {
+                    ForEach(Section.allCases) { section in
+                        Text(section.rawValue)
+                            .tag(section)
+                    }
+                }
+                .frame(minWidth: 150)
+                .listStyle(SidebarListStyle())
+                detailView(for: selectedSection)
             }
             .frame(minWidth: 600, minHeight: 400)
         }
@@ -166,11 +91,107 @@ struct EarprintApp: App {
                     .keyboardShortcut("q")
             }
             CommandMenu("Navigate") {
-                Button("Setup") { selectedTab = 0 }
+                Button("Setup") { selectedSection = .setup }
                     .keyboardShortcut("1", modifiers: .command)
-                Button("Execution") { selectedTab = 1 }
+                Button("Execution") { selectedSection = .execution }
                     .keyboardShortcut("2", modifiers: .command)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func detailView(for section: Section) -> some View {
+        switch section {
+        case .setup:
+            SetupView(viewModel: processingVM,
+                      measurementDir: $measurementDir,
+                      testSignal: $testSignal,
+                      channelBalance: $channelBalance,
+                      targetLevel: $targetLevel,
+                      selectedLayout: $selectedLayout,
+                      playbackDevice: $playbackDevice,
+                      recordingDevice: $recordingDevice,
+                      channelMapping: $channelMapping)
+        case .execution:
+            ExecutionView(viewModel: processingVM,
+                          measurementDir: measurementDir,
+                          testSignal: testSignal,
+                          channelBalance: channelBalance,
+                          targetLevel: targetLevel,
+                          playbackDevice: playbackDevice,
+                          recordingDevice: recordingDevice,
+                          outputChannels: channelMapping["output_channels"] ?? [],
+                          inputChannels: channelMapping["input_channels"] ?? [],
+                          selectedLayout: selectedLayout,
+                          enableCompensation: $enableCompensation,
+                          headphoneEqEnabled: $headphoneEqEnabled,
+                          headphoneFile: $headphoneFile,
+                          compensationType: $compensationType,
+                          customCompensationFile: $customCompensationFile,
+                          diffuseField: $diffuseField,
+                          xCurveAction: $xCurveAction,
+                          xCurveType: $xCurveType,
+                          xCurveInCapture: $xCurveInCapture,
+                          decayTime: decayTime,
+                          decayEnabled: decayEnabled,
+                          specificLimit: specificLimit,
+                          specificLimitEnabled: specificLimitEnabled,
+                          genericLimit: genericLimit,
+                          genericLimitEnabled: genericLimitEnabled,
+                          frCombinationMethod: frCombinationMethod,
+                          frCombinationEnabled: frCombinationEnabled,
+                          roomCorrection: roomCorrection,
+                          roomTarget: roomTarget,
+                          micCalibration: micCalibration,
+                          interactiveDelays: interactiveDelays)
+        case .postProcessing:
+            PostProcessingView(viewModel: processingVM,
+                               measurementDir: measurementDir,
+                               testSignal: testSignal,
+                               playbackDevice: playbackDevice,
+                               recordingDevice: recordingDevice,
+                               enableCompensation: $enableCompensation,
+                               headphoneEqEnabled: $headphoneEqEnabled,
+                               headphoneFile: $headphoneFile,
+                               compensationType: $compensationType,
+                               customCompensationFile: $customCompensationFile,
+                               diffuseField: $diffuseField,
+                               xCurveAction: $xCurveAction,
+                               xCurveType: $xCurveType,
+                               xCurveInCapture: $xCurveInCapture,
+                               channelBalance: $channelBalance,
+                               targetLevel: $targetLevel,
+                               decayTime: $decayTime,
+                               decayEnabled: $decayEnabled,
+                               specificLimit: $specificLimit,
+                               specificLimitEnabled: $specificLimitEnabled,
+                               genericLimit: $genericLimit,
+                               genericLimitEnabled: $genericLimitEnabled,
+                               frCombinationMethod: $frCombinationMethod,
+                               frCombinationEnabled: $frCombinationEnabled,
+                               roomCorrection: $roomCorrection,
+                               roomTarget: $roomTarget,
+                               micCalibration: $micCalibration,
+                               interactiveDelays: $interactiveDelays)
+        case .roomResponse:
+            RoomResponseView(viewModel: processingVM,
+                             measurementDir: measurementDir,
+                             testSignal: testSignal,
+                             playbackDevice: playbackDevice,
+                             recordingDevice: recordingDevice)
+        case .presets:
+            PresetView(viewModel: processingVM,
+                       measurementDir: measurementDir)
+        case .profiles:
+            ProfileView(viewModel: processingVM,
+                        measurementDir: $measurementDir,
+                        headphoneFile: $headphoneFile,
+                        playbackDevice: $playbackDevice)
+        case .rooms:
+            RoomPresetView(viewModel: processingVM,
+                           measurementDir: $measurementDir)
+        case .visualization:
+            VisualizationView(measurementDir: measurementDir)
         }
     }
 }
