@@ -45,7 +45,6 @@ struct SetupView: View {
                 HStack {
                     Text("Latest Recording:")
                     TextField("No recordings", text: $recordingVM.recordingName)
-                        .font(.system(.body, design: .monospaced))
                     Spacer()
                     Button("Save…") {
                         guard let files = selectFilesPanel(startPath: measurementDir),
