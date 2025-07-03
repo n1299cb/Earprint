@@ -1,2 +1,17 @@
+# Build artifacts
+.build/
+DerivedData/
+
+# Xcode
+*.xcworkspace
+*.xcuserdata
+*.xcuserstate
+
+# macOS files
 .DS_Store
+
+# SwiftPM
+.swiftpm/
+
+# VS Code
 .vscode
