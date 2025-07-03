@@ -62,9 +62,22 @@ struct EarprintApp: App {
         case visualization = "Visualization"
 
         var id: Self { self }
+        var icon: String {
+            switch self {
+            case .setup: return "wrench.and.screwdriver"
+            case .execution: return "play.circle"
+            case .postProcessing: return "wand.and.stars.inverse"
+            case .roomResponse: return "waveform"
+            case .presets: return "slider.horizontal.3"
+            case .profiles: return "person.crop.circle"
+            case .rooms: return "house"
+            case .visualization: return "chart.bar"
+            }
+        }
     }
 
-    @State private var selectedSection: Section? = nil
+    @AppStorage("selectedSection") private var lastSectionRaw: String = Section.setup.rawValue
+    @State private var selectedSection: Section?
 
     init() {
         _measurementDir = State(initialValue: EarprintApp.createTempDir())
@@ -72,54 +85,46 @@ struct EarprintApp: App {
 
     var body: some Scene {
         WindowGroup {
-            NavigationView {
-                List {
-                    NavigationLink(destination: detailView(for: .setup),
-                                   tag: Section.setup,
-                                   selection: $selectedSection) {
-                        Text(Section.setup.rawValue)
+            if #available(macOS 13, *) {
+                NavigationSplitView {
+                    List(Section.allCases, selection: $selectedSection) { section in
+                        Label(section.rawValue, systemImage: section.icon)
+                            .tag(section)
                     }
-                    NavigationLink(destination: detailView(for: .execution),
-                                   tag: Section.execution,
-                                   selection: $selectedSection) {
-                        Text(Section.execution.rawValue)
-                    }
-                    NavigationLink(destination: detailView(for: .postProcessing),
-                                   tag: Section.postProcessing,
-                                   selection: $selectedSection) {
-                        Text(Section.postProcessing.rawValue)
-                    }
-                    NavigationLink(destination: detailView(for: .roomResponse),
-                                   tag: Section.roomResponse,
-                                   selection: $selectedSection) {
-                        Text(Section.roomResponse.rawValue)
-                    }
-                    NavigationLink(destination: detailView(for: .presets),
-                                   tag: Section.presets,
-                                   selection: $selectedSection) {
-                        Text(Section.presets.rawValue)
-                    }
-                    NavigationLink(destination: detailView(for: .profiles),
-                                   tag: Section.profiles,
-                                   selection: $selectedSection) {
-                        Text(Section.profiles.rawValue)
-                    }
-                    NavigationLink(destination: detailView(for: .rooms),
-                                   tag: Section.rooms,
-                                   selection: $selectedSection) {
-                        Text(Section.rooms.rawValue)
-                    }
-                    NavigationLink(destination: detailView(for: .visualization),
-                                   tag: Section.visualization,
-                                   selection: $selectedSection) {
-                        Text(Section.visualization.rawValue)
+                    .frame(minWidth: 150)
+                } detail: {
+                    if let section = selectedSection {
+                        detailView(for: section)
+                    } else {
+                        Text("Select a section")
                     }
                 }
-                .frame(minWidth: 150)
-                .listStyle(SidebarListStyle())
-                Text("Select a section")
+                .frame(minWidth: 600, minHeight: 400)
+            } else {
+                NavigationView {
+                    List(selection: $selectedSection) {
+                        ForEach(Section.allCases) { section in
+                            NavigationLink(destination: detailView(for: section), tag: section, selection: $selectedSection) {
+                                Label(section.rawValue, systemImage: section.icon)
+                            }
+                        }
+                    }
+                    .frame(minWidth: 150)
+                    .listStyle(SidebarListStyle())
+                    if let section = selectedSection {
+                        detailView(for: section)
+                    } else {
+                        Text("Select a section")
+                    }
+                }
+                .frame(minWidth: 600, minHeight: 400)
             }
-            .frame(minWidth: 600, minHeight: 400)
+            .onAppear {
+                selectedSection = Section(rawValue: lastSectionRaw)
+            }
+            .onChange(of: selectedSection) { newValue in
+                lastSectionRaw = newValue?.rawValue ?? Section.setup.rawValue
+            }
         }
         .commands {
             CommandGroup(replacing: .appTermination) {
