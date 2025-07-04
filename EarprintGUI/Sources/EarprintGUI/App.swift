@@ -81,7 +81,15 @@ struct EarprintApp: App {
     @State private var selectedSection: Section?
 
     init() {
-        let start = defaultMeasurementDir.isEmpty ? EarprintApp.createTempDir() : defaultMeasurementDir
+        // Can't read @AppStorage properties before self initializes, so pull
+        // the preference directly from UserDefaults
+        let stored = UserDefaults.standard.string(forKey: "defaultMeasurementDir") ?? ""
+        let start: String
+        if stored.isEmpty {
+            start = EarprintApp.createTempDir()
+        } else {
+            start = stored
+        }
         _measurementDir = State(initialValue: start)
     }
 
