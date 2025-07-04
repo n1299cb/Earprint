@@ -14,13 +14,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct EarprintApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    private static func createTempDir() -> String {
+    
+    static func createTempDir() -> String {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("Earprint-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url.path
     }
-    @AppStorage("defaultMeasurementDir") private var defaultMeasurementDir: String = ""
+    
     @State private var measurementDir: String
     @State private var testSignal: String = ""
     @State private var channelBalance: String = ""
@@ -63,6 +64,7 @@ struct EarprintApp: App {
         case visualization = "Visualization"
 
         var id: Self { self }
+        
         var icon: String {
             switch self {
             case .setup: return "wrench.and.screwdriver"
@@ -81,16 +83,7 @@ struct EarprintApp: App {
     @State private var selectedSection: Section?
 
     init() {
-        // Can't read @AppStorage properties before self initializes, so pull
-        // the preference directly from UserDefaults
-        let stored = UserDefaults.standard.string(forKey: "defaultMeasurementDir") ?? ""
-        let start: String
-        if stored.isEmpty {
-            start = EarprintApp.createTempDir()
-        } else {
-            start = stored
-        }
-        _measurementDir = State(initialValue: start)
+        _measurementDir = State(initialValue: EarprintApp.createTempDir())
     }
 
     var body: some Scene {
@@ -102,8 +95,6 @@ struct EarprintApp: App {
                             Label(section.rawValue, systemImage: section.icon)
                                 .tag(section)
                         }
-                        .listStyle(.sidebar)
-                        .navigationTitle("Sections")
                         .frame(minWidth: 150)
                     } detail: {
                         if let section = selectedSection {
@@ -113,32 +104,18 @@ struct EarprintApp: App {
                         }
                     }
                     .frame(minWidth: 600, minHeight: 400)
-                    .toolbar {
-                        ToolbarItem(placement: .navigation) {
-                            Button(action: toggleSidebar) {
-                                Image(systemName: "sidebar.leading")
-                            }
-                        }
-                        ToolbarItem {
-                            Button {
-                                NSApp.sendAction(#selector(NSApplication.showPreferencesWindow(_:)), to: nil, from: nil)
-                            } label: {
-                                Image(systemName: "gearshape")
-                            }
-                        }
-                    }
                 } else {
                     NavigationView {
                         List(selection: $selectedSection) {
                             ForEach(Section.allCases) { section in
                                 NavigationLink(destination: detailView(for: section), tag: section, selection: $selectedSection) {
                                     Label(section.rawValue, systemImage: section.icon)
+                                }
                             }
                         }
-                        }
-                        .navigationTitle("Sections")
                         .frame(minWidth: 150)
                         .listStyle(SidebarListStyle())
+                        
                         if let section = selectedSection {
                             detailView(for: section)
                         } else {
@@ -146,46 +123,33 @@ struct EarprintApp: App {
                         }
                     }
                     .frame(minWidth: 600, minHeight: 400)
-                    .toolbar {
-                        ToolbarItem(placement: .navigation) {
-                            Button(action: toggleSidebar) {
-                                Image(systemName: "sidebar.leading")
-                            }
-                        }
-                        ToolbarItem {
-                            Button {
-                                NSApp.sendAction(#selector(NSApplication.showPreferencesWindow(_:)), to: nil, from: nil)
-                            } label: {
-                                Image(systemName: "gearshape")
-                            }
-                        }
-                    }
                 }
             }
             .onAppear {
-                selectedSection = Section(rawValue: lastSectionRaw)
+                selectedSection = Section(rawValue: lastSectionRaw) ?? .setup
             }
             .onChange(of: selectedSection) { newValue in
                 lastSectionRaw = newValue?.rawValue ?? Section.setup.rawValue
             }
-            .onChange(of: defaultMeasurementDir) { newValue in
-                if !newValue.isEmpty { measurementDir = newValue }
-            }
         }
         .commands {
             CommandGroup(replacing: .appTermination) {
-                Button("Quit EarprintGUI") { NSApplication.shared.terminate(nil) }
-                    .keyboardShortcut("q")
+                Button("Quit Earprint") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .keyboardShortcut("q")
             }
             CommandMenu("Navigate") {
-                Button("Setup") { selectedSection = .setup }
-                    .keyboardShortcut("1", modifiers: .command)
-                Button("Execution") { selectedSection = .execution }
-                    .keyboardShortcut("2", modifiers: .command)
+                Button("Setup") {
+                    selectedSection = .setup
+                }
+                .keyboardShortcut("1", modifiers: .command)
+                
+                Button("Execution") {
+                    selectedSection = .execution
+                }
+                .keyboardShortcut("2", modifiers: .command)
             }
-        }
-        .settings {
-            PreferencesView()
         }
     }
 
@@ -193,47 +157,47 @@ struct EarprintApp: App {
     private func detailView(for section: Section) -> some View {
         switch section {
         case .setup:
-            SetupView(viewModel: processingVM,
-                      measurementDir: $measurementDir,
-                      testSignal: $testSignal,
-                      channelBalance: $channelBalance,
-                      targetLevel: $targetLevel,
-                      selectedLayout: $selectedLayout,
-                      playbackDevice: $playbackDevice,
-                      recordingDevice: $recordingDevice,
-                      channelMapping: $channelMapping)
+            CompatibleModernSetupView(viewModel: processingVM,
+                                      measurementDir: $measurementDir,
+                                      testSignal: $testSignal,
+                                      channelBalance: $channelBalance,
+                                      targetLevel: $targetLevel,
+                                      selectedLayout: $selectedLayout,
+                                      playbackDevice: $playbackDevice,
+                                      recordingDevice: $recordingDevice,
+                                      channelMapping: $channelMapping)
         case .execution:
-            ExecutionView(viewModel: processingVM,
-                          measurementDir: measurementDir,
-                          testSignal: testSignal,
-                          channelBalance: channelBalance,
-                          targetLevel: targetLevel,
-                          playbackDevice: playbackDevice,
-                          recordingDevice: recordingDevice,
-                          outputChannels: channelMapping["output_channels"] ?? [],
-                          inputChannels: channelMapping["input_channels"] ?? [],
-                          selectedLayout: selectedLayout,
-                          enableCompensation: $enableCompensation,
-                          headphoneEqEnabled: $headphoneEqEnabled,
-                          headphoneFile: $headphoneFile,
-                          compensationType: $compensationType,
-                          customCompensationFile: $customCompensationFile,
-                          diffuseField: $diffuseField,
-                          xCurveAction: $xCurveAction,
-                          xCurveType: $xCurveType,
-                          xCurveInCapture: $xCurveInCapture,
-                          decayTime: decayTime,
-                          decayEnabled: decayEnabled,
-                          specificLimit: specificLimit,
-                          specificLimitEnabled: specificLimitEnabled,
-                          genericLimit: genericLimit,
-                          genericLimitEnabled: genericLimitEnabled,
-                          frCombinationMethod: frCombinationMethod,
-                          frCombinationEnabled: frCombinationEnabled,
-                          roomCorrection: roomCorrection,
-                          roomTarget: roomTarget,
-                          micCalibration: micCalibration,
-                          interactiveDelays: interactiveDelays)
+            ModernExecutionView(viewModel: processingVM,
+                                    measurementDir: measurementDir,
+                                    testSignal: testSignal,
+                                    channelBalance: channelBalance,
+                                    targetLevel: targetLevel,
+                                    playbackDevice: playbackDevice,
+                                    recordingDevice: recordingDevice,
+                                    outputChannels: channelMapping["output_channels"] ?? [],
+                                    inputChannels: channelMapping["input_channels"] ?? [],
+                                    selectedLayout: selectedLayout,
+                                    enableCompensation: $enableCompensation,
+                                    headphoneEqEnabled: $headphoneEqEnabled,
+                                    headphoneFile: $headphoneFile,
+                                    compensationType: $compensationType,
+                                    customCompensationFile: $customCompensationFile,
+                                    diffuseField: $diffuseField,
+                                    xCurveAction: $xCurveAction,
+                                    xCurveType: $xCurveType,
+                                    xCurveInCapture: $xCurveInCapture,
+                                    decayTime: decayTime,
+                                    decayEnabled: decayEnabled,
+                                    specificLimit: specificLimit,
+                                    specificLimitEnabled: specificLimitEnabled,
+                                    genericLimit: genericLimit,
+                                    genericLimitEnabled: genericLimitEnabled,
+                                    frCombinationMethod: frCombinationMethod,
+                                    frCombinationEnabled: frCombinationEnabled,
+                                    roomCorrection: roomCorrection,
+                                    roomTarget: roomTarget,
+                                    micCalibration: micCalibration,
+                                    interactiveDelays: interactiveDelays)
         case .postProcessing:
             PostProcessingView(viewModel: processingVM,
                                measurementDir: measurementDir,
@@ -283,10 +247,6 @@ struct EarprintApp: App {
         case .visualization:
             VisualizationView(measurementDir: measurementDir)
         }
-    }
-
-    private func toggleSidebar() {
-        NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
     }
 }
 #endif

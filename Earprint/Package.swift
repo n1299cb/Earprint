@@ -4,13 +4,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "EarprintGUI",
+    name: "Earprint",
+    defaultLocalization: "en",
     platforms: [
-        .macOS(.v12)
+        .macOS(.v13)
     ],
     targets: [
         .executableTarget(
-            name: "EarprintGUI",
+            name: "Earprint",
             resources: [
                 .copy("../../Scripts"),
                 .copy("../../Resources/EmbeddedPython")

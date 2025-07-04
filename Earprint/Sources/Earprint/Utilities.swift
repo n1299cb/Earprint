@@ -7,11 +7,11 @@ import AppKit
 ///
 /// When built as part of the full project the repository root may sit one
 /// level above the package directory.  In this repository the scripts reside in
-/// `EarprintGUI/Scripts`, so derive the package root and append the Scripts
+/// `Earprint/Scripts`, so derive the package root and append the Scripts
 /// folder to form `scriptsRoot`.
 let packageRoot = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent() // Utilities.swift
-    .deletingLastPathComponent() // EarprintGUI
+    .deletingLastPathComponent() // Earprint
     .deletingLastPathComponent() // Sources
 /// Root directory of the repository (one level above the package)
 let repoRoot = packageRoot.deletingLastPathComponent()
