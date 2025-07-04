@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 
 struct ModernExecutionView: View {
-    @ObservedObject var viewModel: ProcessingViewModel
+    @ObservedObject var viewModel: ModernProcessingViewModel
     var measurementDir: String
     var testSignal: String
     var channelBalance: String

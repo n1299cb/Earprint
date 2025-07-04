@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 
 struct CompensationView: View {
-    @ObservedObject var viewModel: ProcessingViewModel
+    @ObservedObject var viewModel: ModernProcessingViewModel
     @Binding var enableCompensation: Bool
     @Binding var headphoneEqEnabled: Bool
     @Binding var headphoneFile: String

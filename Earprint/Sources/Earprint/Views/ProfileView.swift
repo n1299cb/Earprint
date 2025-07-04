@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 
 struct ProfileView: View {
-    @ObservedObject var viewModel: ProcessingViewModel
+    @ObservedObject var viewModel: ModernProcessingViewModel
     @Binding var measurementDir: String
     @Binding var headphoneFile: String
     @Binding var playbackDevice: String

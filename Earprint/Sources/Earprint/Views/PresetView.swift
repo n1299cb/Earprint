@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 
 struct PresetView: View {
-    @ObservedObject var viewModel: ProcessingViewModel
+    @ObservedObject var viewModel: ModernProcessingViewModel
     var measurementDir: String
     @State private var presets: [String] = []
     @State private var selected: String?

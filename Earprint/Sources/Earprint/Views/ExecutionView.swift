@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 
 struct ExecutionView: View {
-    @ObservedObject var viewModel: ProcessingViewModel
+    @ObservedObject var viewModel: ModernProcessingViewModel
     var measurementDir: String
     var testSignal: String
     var channelBalance: String
@@ -102,6 +102,7 @@ struct ExecutionView: View {
             HStack {
                 Text("Latest Recording:")
                 TextField("No recordings", text: $recordingVM.recordingName)
+                    .font(.system(.body, design: .monospaced))
                 Spacer()
                 Button("Save…") {
                     if let path = saveDirectoryPanel(startPath: measurementDir) {
@@ -122,6 +123,7 @@ struct ExecutionView: View {
                 }
                 if let remaining = viewModel.remainingTime {
                     Text(String(format: "%.1fs remaining", remaining))
+                        .font(.caption)
                 }
             }
                 Button("Launch Recorder") {

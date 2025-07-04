@@ -51,7 +51,7 @@ struct EarprintApp: App {
     @State private var roomTarget: String = ""
     @State private var micCalibration: String = ""
     @State private var interactiveDelays: Bool = false
-    @StateObject private var processingVM = ProcessingViewModel()
+    @StateObject private var processingVM = ModernProcessingViewModel()
 
     enum Section: String, CaseIterable, Identifiable {
         case setup = "Setup"
@@ -199,34 +199,34 @@ struct EarprintApp: App {
                                     micCalibration: micCalibration,
                                     interactiveDelays: interactiveDelays)
         case .postProcessing:
-            PostProcessingView(viewModel: processingVM,
-                               measurementDir: measurementDir,
-                               testSignal: testSignal,
-                               playbackDevice: playbackDevice,
-                               recordingDevice: recordingDevice,
-                               enableCompensation: $enableCompensation,
-                               headphoneEqEnabled: $headphoneEqEnabled,
-                               headphoneFile: $headphoneFile,
-                               compensationType: $compensationType,
-                               customCompensationFile: $customCompensationFile,
-                               diffuseField: $diffuseField,
-                               xCurveAction: $xCurveAction,
-                               xCurveType: $xCurveType,
-                               xCurveInCapture: $xCurveInCapture,
-                               channelBalance: $channelBalance,
-                               targetLevel: $targetLevel,
-                               decayTime: $decayTime,
-                               decayEnabled: $decayEnabled,
-                               specificLimit: $specificLimit,
-                               specificLimitEnabled: $specificLimitEnabled,
-                               genericLimit: $genericLimit,
-                               genericLimitEnabled: $genericLimitEnabled,
-                               frCombinationMethod: $frCombinationMethod,
-                               frCombinationEnabled: $frCombinationEnabled,
-                               roomCorrection: $roomCorrection,
-                               roomTarget: $roomTarget,
-                               micCalibration: $micCalibration,
-                               interactiveDelays: $interactiveDelays)
+            ModernPostProcessingView(viewModel: processingVM,
+                                     measurementDir: measurementDir,
+                                     testSignal: testSignal,
+                                     playbackDevice: playbackDevice,
+                                     recordingDevice: recordingDevice,
+                                     enableCompensation: $enableCompensation,
+                                     headphoneEqEnabled: $headphoneEqEnabled,
+                                     headphoneFile: $headphoneFile,
+                                     compensationType: $compensationType,
+                                     customCompensationFile: $customCompensationFile,
+                                     diffuseField: $diffuseField,
+                                     xCurveAction: $xCurveAction,
+                                     xCurveType: $xCurveType,
+                                     xCurveInCapture: $xCurveInCapture,
+                                     channelBalance: $channelBalance,
+                                     targetLevel: $targetLevel,
+                                     decayTime: $decayTime,
+                                     decayEnabled: $decayEnabled,
+                                     specificLimit: $specificLimit,
+                                     specificLimitEnabled: $specificLimitEnabled,
+                                     genericLimit: $genericLimit,
+                                     genericLimitEnabled: $genericLimitEnabled,
+                                     frCombinationMethod: $frCombinationMethod,
+                                     frCombinationEnabled: $frCombinationEnabled,
+                                     roomCorrection: $roomCorrection,
+                                     roomTarget: $roomTarget,
+                                     micCalibration: $micCalibration,
+                                     interactiveDelays: $interactiveDelays)
         case .roomResponse:
             RoomResponseView(viewModel: processingVM,
                              measurementDir: measurementDir,

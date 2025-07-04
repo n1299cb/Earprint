@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 
 struct RoomResponseView: View {
-    @ObservedObject var viewModel: ProcessingViewModel
+    @ObservedObject var viewModel: ModernProcessingViewModel
     var measurementDir: String
     var testSignal: String
     var playbackDevice: String

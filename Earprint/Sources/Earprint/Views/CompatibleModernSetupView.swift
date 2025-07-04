@@ -6,7 +6,7 @@ import CoreAudio
 import AppKit
 
 struct CompatibleModernSetupView: View {
-    @ObservedObject var viewModel: ProcessingViewModel
+    @ObservedObject var viewModel: ModernProcessingViewModel
     @Binding var measurementDir: String
     @Binding var testSignal: String
     @Binding var channelBalance: String
@@ -72,7 +72,20 @@ struct CompatibleModernSetupView: View {
                 }
             }
         }
-        .onAppear(perform: initializeView)
+        .onAppear {
+            print("DEBUG: App onAppear - selectedLayout: '\(selectedLayout)'")
+            print("DEBUG: App onAppear - layouts array: \(layouts)")
+            
+            // Force refresh if layouts are empty
+            if layouts.isEmpty {
+                print("DEBUG: Layouts empty, forcing load...")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    loadLayoutsSync()
+                }
+            }
+            
+            initializeView()
+        }
         .onChange(of: measurementDir) { _ in
             Task { validatePaths() }
         }
@@ -273,27 +286,38 @@ struct CompatibleModernSetupView: View {
             VStack(spacing: 12) {
                 SimpleConfigRow(title: "Layout Type") {
                     VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Selected: \(selectedLayout.isEmpty ? "None" : selectedLayout)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Spacer()
+                            
+                            // Force refresh button for debugging
+                            Button("Refresh") {
+                                loadLayoutsSync()
+                            }
+                            .font(.caption)
+                        }
+                        
+                        // Use a different approach with explicit state key
                         Picker("Layout", selection: $selectedLayout) {
+                            ForEach(layouts, id: \.self) { layout in
+                                Text(layout).tag(layout)
+                            }
+                            
+                            // Add empty option if no layouts loaded
                             if layouts.isEmpty {
-                                Text("Loading layouts...").tag("")
-                            } else {
-                                ForEach(layouts, id: \.self) { layout in
-                                    Text(layout).tag(layout)
-                                }
+                                Text("Loading...").tag("")
                             }
                         }
                         .pickerStyle(MenuPickerStyle())
+                        .id("layout-picker-\(layouts.count)") // Force recreation when layouts change
                         .disabled(layouts.isEmpty)
                         
-                        if layouts.isEmpty {
-                            Text("Loading available layouts...")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("\(layouts.count) layouts available")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
+                        Text("\(layouts.count) layouts available")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
                 }
                 
@@ -424,10 +448,15 @@ struct CompatibleModernSetupView: View {
     }
     
     private func loadLayoutsSync() {
+        print("DEBUG: loadLayoutsSync called")
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process()
             process.currentDirectoryURL = scriptsRoot
+            
+            print("DEBUG: scriptsRoot = \(scriptsRoot)")
+            
             if let py = embeddedPythonURL {
+                print("DEBUG: Using embedded Python: \(py)")
                 process.executableURL = py
                 process.arguments = [
                     "-c",
@@ -438,6 +467,7 @@ struct CompatibleModernSetupView: View {
                     "PYTHONPATH": scriptsRoot.path
                 ]
             } else {
+                print("DEBUG: Using system Python")
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
                 process.arguments = [
                     "python3",
@@ -445,34 +475,55 @@ struct CompatibleModernSetupView: View {
                     "import json,constants,sys; json.dump(sorted(constants.SPEAKER_LAYOUTS.keys()), sys.stdout)"
                 ]
             }
+            
             let pipe = Pipe()
             process.standardOutput = pipe
-            try? process.run()
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.standardError = pipe
             
-            DispatchQueue.main.async {
-                if let arr = try? JSONSerialization.jsonObject(with: data) as? [String] {
-                    self.layouts = arr
-                    print("DEBUG: Loaded layouts: \(arr)")
-                    print("DEBUG: Current selectedLayout: '\(self.selectedLayout)'")
-                    
-                    // Only update selectedLayout if it's empty or invalid
-                    if self.selectedLayout.isEmpty {
-                        if let first = arr.first {
-                            self.selectedLayout = first
-                            print("DEBUG: Set initial selectedLayout to: '\(first)'")
+            do {
+                try process.run()
+                process.waitUntilExit()
+                
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let dataString = String(data: data, encoding: .utf8) ?? "no data"
+                print("DEBUG: Python output: \(dataString)")
+                
+                DispatchQueue.main.async {
+                    if let arr = try? JSONSerialization.jsonObject(with: data) as? [String] {
+                        print("DEBUG: Successfully parsed layouts: \(arr)")
+                        
+                        // CRITICAL: Force view update by updating layouts first
+                        self.layouts = []  // Clear first
+                        
+                        // Use a slight delay to ensure SwiftUI processes the clear
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            self.layouts = arr  // Then set the new values
+                            
+                            // Ensure selectedLayout is valid
+                            if !self.selectedLayout.isEmpty && !arr.contains(self.selectedLayout) {
+                                print("DEBUG: selectedLayout '\(self.selectedLayout)' not in loaded layouts")
+                                if let first = arr.first {
+                                    self.selectedLayout = first
+                                    print("DEBUG: Reset selectedLayout to: '\(first)'")
+                                }
+                            } else if self.selectedLayout.isEmpty && !arr.isEmpty {
+                                if let first = arr.first {
+                                    self.selectedLayout = first
+                                    print("DEBUG: Set initial selectedLayout to: '\(first)'")
+                                }
+                            }
+                            
+                            print("DEBUG: Final state - layouts.count: \(self.layouts.count), selectedLayout: '\(self.selectedLayout)'")
                         }
-                    } else if !arr.contains(self.selectedLayout) {
-                        print("DEBUG: selectedLayout '\(self.selectedLayout)' not found in loaded layouts")
-                        if let first = arr.first {
-                            self.selectedLayout = first
-                            print("DEBUG: Reset selectedLayout to: '\(first)'")
-                        }
+                    } else {
+                        print("DEBUG: Failed to parse JSON from: \(dataString)")
+                        self.viewModel.log += "Failed to load layouts: \(dataString)\n"
                     }
-                } else {
-                    self.viewModel.log += String(data: data, encoding: .utf8) ?? "Failed to load layouts\n"
-                    print("DEBUG: Failed to load layouts: \(String(data: data, encoding: .utf8) ?? "no data")")
+                }
+            } catch {
+                print("DEBUG: Process execution failed: \(error)")
+                DispatchQueue.main.async {
+                    self.viewModel.log += "Process execution failed: \(error)\n"
                 }
             }
         }
