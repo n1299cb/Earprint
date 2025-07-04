@@ -88,3 +88,10 @@ pytest
 
 The tests assume the same directory layout as the repository and rely on the
 packages mentioned above.
+
+## Preferences
+
+The Setup view lets you choose where measurements are stored. If you
+often work in the same folder, open **Settings** in the menu bar and set a
+default measurement directory. New sessions will start there, but you can
+override the location from Setup.

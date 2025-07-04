@@ -43,8 +43,21 @@ struct SetupView: View {
         VStack(alignment: .leading) {
             Form {
                 HStack {
+                    TextField("Measurement Directory", text: $measurementDir)
+                    Button("Browse") {
+                        if let path = openPanel(directory: true, startPath: measurementDir) {
+                            measurementDir = path
+                        }
+                    }
+                }
+                Text("Set a default directory under Preferences")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 4)
+                HStack {
                     Text("Latest Recording:")
                     TextField("No recordings", text: $recordingVM.recordingName)
+                        .font(.system(.body, design: .monospaced))
                     Spacer()
                     Button("Save…") {
                         guard let files = selectFilesPanel(startPath: measurementDir),

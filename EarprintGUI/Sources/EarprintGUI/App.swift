@@ -20,6 +20,7 @@ struct EarprintApp: App {
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url.path
     }
+    @AppStorage("defaultMeasurementDir") private var defaultMeasurementDir: String = ""
     @State private var measurementDir: String
     @State private var testSignal: String = ""
     @State private var channelBalance: String = ""
@@ -80,7 +81,8 @@ struct EarprintApp: App {
     @State private var selectedSection: Section?
 
     init() {
-        _measurementDir = State(initialValue: EarprintApp.createTempDir())
+        let start = defaultMeasurementDir.isEmpty ? EarprintApp.createTempDir() : defaultMeasurementDir
+        _measurementDir = State(initialValue: start)
     }
 
     var body: some Scene {
@@ -92,6 +94,8 @@ struct EarprintApp: App {
                             Label(section.rawValue, systemImage: section.icon)
                                 .tag(section)
                         }
+                        .listStyle(.sidebar)
+                        .navigationTitle("Sections")
                         .frame(minWidth: 150)
                     } detail: {
                         if let section = selectedSection {
@@ -101,15 +105,30 @@ struct EarprintApp: App {
                         }
                     }
                     .frame(minWidth: 600, minHeight: 400)
+                    .toolbar {
+                        ToolbarItem(placement: .navigation) {
+                            Button(action: toggleSidebar) {
+                                Image(systemName: "sidebar.leading")
+                            }
+                        }
+                        ToolbarItem {
+                            Button {
+                                NSApp.sendAction(#selector(NSApplication.showPreferencesWindow(_:)), to: nil, from: nil)
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
+                        }
+                    }
                 } else {
                     NavigationView {
                         List(selection: $selectedSection) {
                             ForEach(Section.allCases) { section in
                                 NavigationLink(destination: detailView(for: section), tag: section, selection: $selectedSection) {
                                     Label(section.rawValue, systemImage: section.icon)
-                                }
                             }
                         }
+                        }
+                        .navigationTitle("Sections")
                         .frame(minWidth: 150)
                         .listStyle(SidebarListStyle())
                         if let section = selectedSection {
@@ -119,6 +138,20 @@ struct EarprintApp: App {
                         }
                     }
                     .frame(minWidth: 600, minHeight: 400)
+                    .toolbar {
+                        ToolbarItem(placement: .navigation) {
+                            Button(action: toggleSidebar) {
+                                Image(systemName: "sidebar.leading")
+                            }
+                        }
+                        ToolbarItem {
+                            Button {
+                                NSApp.sendAction(#selector(NSApplication.showPreferencesWindow(_:)), to: nil, from: nil)
+                            } label: {
+                                Image(systemName: "gearshape")
+                            }
+                        }
+                    }
                 }
             }
             .onAppear {
@@ -126,6 +159,9 @@ struct EarprintApp: App {
             }
             .onChange(of: selectedSection) { newValue in
                 lastSectionRaw = newValue?.rawValue ?? Section.setup.rawValue
+            }
+            .onChange(of: defaultMeasurementDir) { newValue in
+                if !newValue.isEmpty { measurementDir = newValue }
             }
         }
         .commands {
@@ -139,6 +175,9 @@ struct EarprintApp: App {
                 Button("Execution") { selectedSection = .execution }
                     .keyboardShortcut("2", modifiers: .command)
             }
+        }
+        .settings {
+            PreferencesView()
         }
     }
 
@@ -236,6 +275,10 @@ struct EarprintApp: App {
         case .visualization:
             VisualizationView(measurementDir: measurementDir)
         }
+    }
+
+    private func toggleSidebar() {
+        NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
     }
 }
 #endif
