@@ -5,20 +5,21 @@ It is distributed as a Swift package with bundled Python scripts.
 
 ## Repository layout
 
-- `EarprintGUI/` – Swift package containing the macOS application
-- `EarprintGUI/Scripts/` – Python tools used by the GUI and available as CLI utilities
-- `EarprintGUI/Resources/EmbeddedPython/` – location for the embedded Python interpreter
+- `Earprint/` – Swift package containing the macOS application
+- `Earprint/Scripts/` – Python tools used by the GUI and available as CLI utilities
+- `Earprint/Resources/EmbeddedPython/` – location for the embedded Python interpreter
+- `Earprint/Sources/Earprint/` - location for application files, views and view models
 
 ## Building the app
 
 The application is built with the Swift Package Manager. From the project root:
 
 ```bash
-cd EarprintGUI
+cd Earprint
 swift build -c release
 ```
 
-`swift run EarprintGUI` launches the GUI while developing. When distributing the app you must embed a Python runtime. Copy the official macOS distribution so that the directory tree matches the following structure:
+`swift run Earprint` launches the GUI while developing. When distributing the app you must embed a Python runtime. Copy the official macOS distribution so that the directory tree matches the following structure:
 
 ```text
 EmbeddedPython
@@ -55,7 +56,7 @@ executing the test suite.
 Alternatively, you can install the packages directly into the bundled Python framework used by the application:
 
 ```bash
-EarprintGUI/Resources/EmbeddedPython/Python.framework/Versions/3.9/bin/python3 -m pip install -r requirements.txt
+Earprint/Resources/EmbeddedPython/Python.framework/Versions/3.9/bin/python3 -m pip install -r requirements.txt
 ```
 
 Once the dependencies are installed you can run the test suite with `pytest`.
@@ -79,7 +80,7 @@ SwiftUI Charts view.
 
 ## Running the tests
 
-The Python tests live under `EarprintGUI/Scripts/tests`. After installing the
+The Python tests live under `Earprint/Scripts/tests`. After installing the
 required dependencies run:
 
 ```bash
