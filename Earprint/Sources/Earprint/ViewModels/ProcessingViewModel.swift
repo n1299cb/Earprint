@@ -1,258 +1,454 @@
-import Foundation
 #if canImport(SwiftUI)
 import SwiftUI
+import Foundation
+import Combine
 
+// MARK: - Configuration Models
+struct ProcessingConfiguration {
+    let measurementDir: String
+    let testSignal: String
+    let channelBalance: String?
+    let targetLevel: String?
+    let playbackDevice: String?
+    let recordingDevice: String?
+    let outputChannels: [Int]?
+    let inputChannels: [Int]?
+    
+    // Processing Options
+    let enableCompensation: Bool
+    let headphoneEqEnabled: Bool
+    let headphoneFile: String?
+    let compensationType: String?
+    let diffuseField: Bool
+    
+    // X-Curve Settings
+    let xCurveAction: String
+    let xCurveType: String?
+    let xCurveInCapture: Bool
+    
+    // Advanced Settings
+    let decayTime: String
+    let decayEnabled: Bool
+    let specificLimit: String
+    let specificLimitEnabled: Bool
+    let genericLimit: String
+    let genericLimitEnabled: Bool
+    let frCombinationMethod: String
+    let frCombinationEnabled: Bool
+    let roomCorrection: Bool
+    let roomTarget: String
+    let micCalibration: String
+    let interactiveDelays: Bool
+}
+
+struct RecordingConfiguration {
+    let measurementDir: String
+    let testSignal: String
+    let playbackDevice: String
+    let recordingDevice: String
+    let outputFile: String?
+}
+
+// MARK: - Processing State
+enum ProcessingState: Equatable {
+    case idle
+    case running(progress: Double?, remainingTime: Double?)
+    case completed
+    case failed(Error)
+    
+    static func == (lhs: ProcessingState, rhs: ProcessingState) -> Bool {
+        switch (lhs, rhs) {
+        case (.idle, .idle), (.completed, .completed):
+            return true
+        case let (.running(p1, t1), .running(p2, t2)):
+            return p1 == p2 && t1 == t2
+        case let (.failed(e1), .failed(e2)):
+            return e1.localizedDescription == e2.localizedDescription
+        default:
+            return false
+        }
+    }
+}
+
+// MARK: - Enhanced ProcessingViewModel
 @MainActor
 final class ProcessingViewModel: ObservableObject {
+    
+    // MARK: - Published Properties
+    @Published var state: ProcessingState = .idle
     @Published var log: String = ""
-    @Published var isRunning: Bool = false
-    @Published var progress: Double? = nil
-    @Published var remainingTime: Double? = nil
     @Published var autoLog: Bool = false
     @Published var logFile: String = ""
-
-    private var process: Process?
     
-    // scriptPath helper provided by Utilities.swift
-
-    private func startPython(script: String, args: [String]) {
-        isRunning = true
-        progress = nil
-        remainingTime = nil
-        log = ""
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-            let process = Process()
-            process.currentDirectoryURL = scriptsRoot
-            if let py = embeddedPythonURL {
-                process.executableURL = py
-                process.arguments = [script] + args
-                process.environment = [
-                    "PYTHONHOME": py.deletingLastPathComponent().deletingLastPathComponent().path,
-                    "PYTHONPATH": scriptsRoot.path
-                ]
-            } else {
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = ["python3", script] + args
-            }
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-            pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-                guard let self else { return }
-                let data = handle.availableData
-                guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
-                Task { @MainActor in
-                    if str.hasPrefix("PROGRESS") {
-                        let comps = str.split(separator: " ")
-                        if comps.count >= 2, let val = Double(comps[1]) {
-                            self.progress = val
-                        }
-                        if comps.count >= 3, let rem = Double(comps[2]) {
-                            self.remainingTime = rem
-                        }
-                    } else {
-                        self.appendLog(str)
-                    }
-                }
-            }
-            do {
-                Task { @MainActor in self.process = process }
-                try process.run()
-                process.waitUntilExit()
-            } catch {
-                Task { @MainActor in
-                    self.appendLog("\(error)\n")
-                }
-            }
-            Task { @MainActor in
-                pipe.fileHandleForReading.readabilityHandler = nil
-                self.isRunning = false
-                self.progress = nil
-                self.remainingTime = nil
-                self.process = nil
-            }
+    // MARK: - Computed Properties
+    var isRunning: Bool {
+        if case .running = state { return true }
+        return false
+    }
+    
+    var progress: Double? {
+        if case .running(let progress, _) = state { return progress }
+        return nil
+    }
+    
+    var remainingTime: Double? {
+        if case .running(_, let time) = state { return time }
+        return nil
+    }
+    
+    // MARK: - Private Properties
+    private var process: Process?
+    private var progressTimer: Timer?
+    private var cancellables = Set<AnyCancellable>()
+    
+    init() {
+        setupLogBinding()
+    }
+    
+    // MARK: - Public Methods
+    func run(configuration: ProcessingConfiguration) {
+        guard !isRunning else { return }
+        
+        do {
+            try validateConfiguration(configuration)
+            state = .running(progress: nil, remainingTime: nil)
+            startProcessing(with: configuration)
+        } catch {
+            state = .failed(error)
+            logMessage("Configuration error: \(error.localizedDescription)")
         }
     }
-
-    func run(measurementDir: String,
-             testSignal: String,
-             channelBalance: String?,
-             targetLevel: String?,
-             playbackDevice: String?,
-             recordingDevice: String?,
-             outputChannels: [Int]?,
-             inputChannels: [Int]?,
-             enableCompensation: Bool,
-             headphoneEqEnabled: Bool,
-             headphoneFile: String?,
-             compensationType: String?,
-             diffuseField: Bool,
-             xCurveAction: String,
-             xCurveType: String?,
-             xCurveInCapture: Bool,
-             decayTime: String,
-             decayEnabled: Bool,
-             specificLimit: String,
-             specificLimitEnabled: Bool,
-             genericLimit: String,
-             genericLimitEnabled: Bool,
-             frCombinationMethod: String,
-             frCombinationEnabled: Bool,
-             roomCorrection: Bool,
-             roomTarget: String,
-             micCalibration: String,
-             interactiveDelays: Bool) {
-        var args = ["--dir_path", measurementDir, "--test_signal", testSignal]
-        if let balance = channelBalance, !balance.isEmpty {
-            args += ["--channel_balance", balance]
-        }
-        if let target = targetLevel, !target.isEmpty {
-            args += ["--target_level", target]
-        }
-        if decayEnabled, !decayTime.isEmpty { args += ["--decay", decayTime] }
-        if let p = playbackDevice { args += ["--playback_device", p] }
-        if let r = recordingDevice { args += ["--recording_device", r] }
-        if let outs = outputChannels, !outs.isEmpty {
-            args += ["--output_channels", outs.map(String.init).joined(separator: ",")] 
-        }
-        if let ins = inputChannels, !ins.isEmpty {
-            args += ["--input_channels", ins.map(String.init).joined(separator: ",")] 
-        }
-        if roomCorrection {
-            args.append("--room_target")
-            args.append(roomTarget)
-            if !micCalibration.isEmpty { args += ["--room_mic_calibration", micCalibration] }
-            if specificLimitEnabled, !specificLimit.isEmpty { args += ["--specific_limit", specificLimit] }
-            if genericLimitEnabled, !genericLimit.isEmpty { args += ["--generic_limit", genericLimit] }
-            if frCombinationEnabled { args += ["--fr_combination_method", frCombinationMethod] }
-        }
-        if enableCompensation {
-            args.append("--compensation")
-            if headphoneEqEnabled {
-                if let file = headphoneFile, !file.isEmpty { args += ["--headphones", file] }
-            } else {
-                args.append("--no_headphone_compensation")
-            }
-            if let cType = compensationType, !cType.isEmpty { args.append(cType) }
-        }
-        if diffuseField { args.append("--diffuse_field_compensation") }
-        if xCurveAction == "Apply X-Curve" { args.append("--apply_x_curve") }
-        if xCurveAction == "Remove X-Curve" { args.append("--remove_x_curve") }
-        if xCurveAction != "None", let ct = xCurveType, !ct.isEmpty {
-            args += ["--x_curve_type", ct]
-        }
-        if xCurveInCapture { args.append("--x_curve_in_capture") }
-        if interactiveDelays {
-            args.append("--interactive_delays")
-        } else {
-            let posFile = URL(fileURLWithPath: measurementDir).appendingPathComponent("speaker_positions.json")
-            if FileManager.default.fileExists(atPath: posFile.path) {
-                let delayFile = URL(fileURLWithPath: measurementDir).appendingPathComponent("speaker_delays.json")
-                args += ["--delay-file", delayFile.path]
-            }
-        }
-        startPython(script: scriptPath("earprint.py"), args: args)
-    }
-
-    func layoutWizard(layout: String, dir: String) {
-        startPython(script: scriptPath("generate_layout.py"), args: ["--layout", layout, "--dir", dir])
-    }
-
-    func captureWizard(layout: String, dir: String) {
-        startPython(script: scriptPath("capture_wizard.py"), args: ["--layout", layout, "--dir", dir, "--print_progress"])
-    }
-
-    func record(measurementDir: String, testSignal: String, playbackDevice: String, recordingDevice: String, outputFile: String?) {
-        var args = [
-            "--output_dir", measurementDir,
-            "--test_signal", testSignal,
-            "--playback_device", playbackDevice,
-            "--recording_device", recordingDevice,
-            "--print_progress"
-        ]
-        if let file = outputFile { args += ["--output_file", file] }
+    
+    func record(configuration: RecordingConfiguration) {
+        guard !isRunning else { return }
+        
+        state = .running(progress: nil, remainingTime: nil)
+        let args = buildRecordingArgs(configuration)
         startPython(script: scriptPath("recorder.py"), args: args)
     }
-
-    func recordHeadphoneEQ(measurementDir: String, testSignal: String, playbackDevice: String, recordingDevice: String) {
-        let file = URL(fileURLWithPath: measurementDir).appendingPathComponent("headphones.wav").path
-        record(measurementDir: measurementDir,
-               testSignal: testSignal,
-               playbackDevice: playbackDevice,
-               recordingDevice: recordingDevice,
-               outputFile: file)
+    
+    func recordHeadphoneEQ(configuration: RecordingConfiguration) {
+        let file = URL(fileURLWithPath: configuration.measurementDir)
+            .appendingPathComponent("headphones.wav").path
+        
+        let updatedConfig = RecordingConfiguration(
+            measurementDir: configuration.measurementDir,
+            testSignal: configuration.testSignal,
+            playbackDevice: configuration.playbackDevice,
+            recordingDevice: configuration.recordingDevice,
+            outputFile: file
+        )
+        
+        record(configuration: updatedConfig)
     }
-
-    func recordRoomResponse(measurementDir: String, testSignal: String, playbackDevice: String, recordingDevice: String) {
-        let file = URL(fileURLWithPath: measurementDir).appendingPathComponent("room.wav").path
-        record(measurementDir: measurementDir,
-               testSignal: testSignal,
-               playbackDevice: playbackDevice,
-               recordingDevice: recordingDevice,
-               outputFile: file)
+    
+    func recordRoomResponse(configuration: RecordingConfiguration) {
+        let file = URL(fileURLWithPath: configuration.measurementDir)
+            .appendingPathComponent("room.wav").path
+        
+        let updatedConfig = RecordingConfiguration(
+            measurementDir: configuration.measurementDir,
+            testSignal: configuration.testSignal,
+            playbackDevice: configuration.playbackDevice,
+            recordingDevice: configuration.recordingDevice,
+            outputFile: file
+        )
+        
+        record(configuration: updatedConfig)
     }
-
-    func exportHesuviPreset(measurementDir: String, destination: String) {
+    
+    func layoutWizard(layout: String, dir: String) {
+        guard !isRunning else { return }
+        
+        state = .running(progress: nil, remainingTime: nil)
+        let args = ["--layout", layout, "--dir", dir]
+        startPython(script: scriptPath("generate_layout.py"), args: args)
+    }
+    
+    func captureWizard(layout: String, dir: String) {
+        guard !isRunning else { return }
+        
+        state = .running(progress: nil, remainingTime: nil)
+        let args = ["--layout", layout, "--dir", dir]
+        startPython(script: scriptPath("capture_wizard.py"), args: args)
+    }
+    
+    func exportHesuviPreset(from measurementDir: String, to destination: String) {
         let src = URL(fileURLWithPath: measurementDir).appendingPathComponent("hesuvi.wav")
         let dest = URL(fileURLWithPath: destination)
+        
         do {
             try FileManager.default.copyItem(at: src, to: dest)
-            appendLog("Exported to \(destination)\n")
+            logMessage("Exported to \(destination)")
         } catch {
-            appendLog("Export failed: \(error)\n")
+            logMessage("Export failed: \(error.localizedDescription)")
+            state = .failed(error)
         }
     }
-
-    private func appendLog(_ text: String) {
-        log += text
-        guard autoLog, !logFile.isEmpty else { return }
-        let url = URL(fileURLWithPath: logFile)
-        if let data = text.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logFile) {
-                if let handle = try? FileHandle(forWritingTo: url) {
-                    defer { try? handle.close() }
-                    handle.seekToEndOfFile()
-                    handle.write(data)
-                }
-            } else {
-                try? data.write(to: url)
-            }
-        }
-    }
-
-    /// Expose logging for other view models.
-    func logMessage(_ text: String) {
-        appendLog(text)
-    }
-
-    func clearLog() {
-        log = ""
-    }
-
+    
     func cancel() {
         process?.terminate()
         process = nil
-        isRunning = false
-        progress = nil
+        progressTimer?.invalidate()
+        progressTimer = nil
+        state = .idle
+    }
+    
+    func clearLog() {
+        log = ""
+    }
+    
+    func logMessage(_ text: String) {
+        appendLog(text + "\n")
+    }
+    
+    // MARK: - Private Methods
+    private func setupLogBinding() {
+        $log
+            .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
+            .sink { [weak self] newLog in
+                self?.writeLogToFile(newLog)
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func validateConfiguration(_ config: ProcessingConfiguration) throws {
+        guard !config.measurementDir.isEmpty else {
+            throw ProcessingError.invalidMeasurementDirectory
+        }
+        
+        guard !config.testSignal.isEmpty else {
+            throw ProcessingError.invalidTestSignal
+        }
+        
+        if config.roomCorrection && !config.micCalibration.isEmpty {
+            let calibrationURL = URL(fileURLWithPath: config.micCalibration)
+            guard FileManager.default.fileExists(atPath: calibrationURL.path) else {
+                throw ProcessingError.missingCalibrationFile(config.micCalibration)
+            }
+        }
+        
+        if config.headphoneEqEnabled, let file = config.headphoneFile {
+            let fileURL = URL(fileURLWithPath: file)
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                throw ProcessingError.missingHeadphoneFile(file)
+            }
+        }
+    }
+    
+    private func startProcessing(with config: ProcessingConfiguration) {
+        let args = buildProcessingArgs(config)
+        startPython(script: scriptPath("earprint.py"), args: args)
+    }
+    
+    private func buildProcessingArgs(_ config: ProcessingConfiguration) -> [String] {
+        var args = [
+            "--dir_path", config.measurementDir,
+            "--test_signal", config.testSignal,
+            "--print_progress"
+        ]
+        
+        if let balance = config.channelBalance { args += ["--channel_balance", balance] }
+        if let level = config.targetLevel { args += ["--target_level", level] }
+        if let device = config.playbackDevice { args += ["--playback_device", device] }
+        if let device = config.recordingDevice { args += ["--recording_device", device] }
+        if let channels = config.outputChannels { args += ["--output_channels", channels.map(String.init).joined(separator: ",")] }
+        if let channels = config.inputChannels { args += ["--input_channels", channels.map(String.init).joined(separator: ",")] }
+        
+        if config.enableCompensation { args.append("--compensation") }
+        if config.headphoneEqEnabled, let file = config.headphoneFile { args += ["--headphone_file", file] }
+        if let type = config.compensationType { args += ["--compensation_type", type] }
+        if config.diffuseField { args.append("--diffuse_field") }
+        
+        args += ["--x_curve_action", config.xCurveAction]
+        if let type = config.xCurveType { args += ["--x_curve_type", type] }
+        if config.xCurveInCapture { args.append("--x_curve_in_capture") }
+        
+        if config.decayEnabled { args += ["--decay_time", config.decayTime] }
+        if config.specificLimitEnabled { args += ["--specific_limit", config.specificLimit] }
+        if config.genericLimitEnabled { args += ["--generic_limit", config.genericLimit] }
+        if config.frCombinationEnabled { args += ["--fr_combination_method", config.frCombinationMethod] }
+        if config.roomCorrection { args += ["--room_target", config.roomTarget] }
+        if !config.micCalibration.isEmpty { args += ["--mic_calibration", config.micCalibration] }
+        if config.interactiveDelays { args.append("--interactive_delays") }
+        
+        return args
+    }
+    
+    private func buildRecordingArgs(_ config: RecordingConfiguration) -> [String] {
+        var args = [
+            "--output_dir", config.measurementDir,
+            "--test_signal", config.testSignal,
+            "--playback_device", config.playbackDevice,
+            "--recording_device", config.recordingDevice,
+            "--print_progress"
+        ]
+        
+        if let file = config.outputFile {
+            args += ["--output_file", file]
+        }
+        
+        return args
+    }
+    
+    private func startPython(script: String, args: [String]) {
+        let process = Process()
+        process.currentDirectoryURL = scriptsRoot
+        
+        if let py = embeddedPythonURL {
+            process.executableURL = py
+            process.arguments = [script] + args
+            process.environment = [
+                "PYTHONHOME": py.deletingLastPathComponent().deletingLastPathComponent().path,
+                "PYTHONPATH": scriptsRoot.path
+            ]
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["python3", script] + args
+        }
+        
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            if !data.isEmpty, let output = String(data: data, encoding: .utf8) {
+                DispatchQueue.main.async {
+                    self?.processOutput(output)
+                }
+            }
+        }
+        
+        process.terminationHandler = { [weak self] process in
+            DispatchQueue.main.async {
+                self?.processTerminated(with: process.terminationStatus)
+            }
+        }
+        
+        do {
+            try process.run()
+            self.process = process
+            startProgressMonitoring()
+        } catch {
+            state = .failed(error)
+            logMessage("Failed to start process: \(error.localizedDescription)")
+        }
+    }
+    
+    private func processOutput(_ output: String) {
+        appendLog(output)
+        parseProgressFromOutput(output)
+    }
+    
+    private func parseProgressFromOutput(_ output: String) {
+        // Parse progress indicators from Python output
+        if let progressMatch = output.range(of: #"(\d+\.?\d*)%"#, options: .regularExpression) {
+            let progressStr = String(output[progressMatch])
+            if let progressValue = Double(progressStr.replacingOccurrences(of: "%", with: "")) {
+                let normalizedProgress = progressValue / 100.0
+                if case .running(_, let time) = state {
+                    state = .running(progress: normalizedProgress, remainingTime: time)
+                }
+            }
+        }
+        
+        // Parse time estimates if available
+        if output.range(of: #"(\d+\.?\d*)\s*(?:min|sec|hour)s?\s*remaining"#, options: .regularExpression) != nil {
+            // Time parsing implementation could go here
+        }
+    }
+    
+    private func processTerminated(with status: Int32) {
+        progressTimer?.invalidate()
+        progressTimer = nil
+        process = nil
+        
+        if status == 0 {
+            state = .completed
+            logMessage("Process completed successfully")
+        } else {
+            let error = ProcessingError.processFailure(status)
+            state = .failed(error)
+            logMessage("Process failed with status: \(status)")
+        }
+    }
+    
+    private func startProgressMonitoring() {
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            // Update UI or check process status
+        }
+    }
+    
+    private func appendLog(_ text: String) {
+        log += text
+    }
+    
+    private func writeLogToFile(_ content: String) {
+        guard autoLog, !logFile.isEmpty else { return }
+        
+        let url = URL(fileURLWithPath: logFile)
+        guard let data = content.data(using: .utf8) else { return }
+        
+        do {
+            if FileManager.default.fileExists(atPath: logFile) {
+                let handle = try FileHandle(forWritingTo: url)
+                defer { try? handle.close() }
+                handle.seekToEndOfFile()
+                handle.write(data)
+            } else {
+                try data.write(to: url)
+            }
+        } catch {
+            // Log writing failed, but don't interrupt main process
+        }
     }
 }
+
+// MARK: - Error Types
+enum ProcessingError: LocalizedError {
+    case invalidMeasurementDirectory
+    case invalidTestSignal
+    case missingCalibrationFile(String)
+    case missingHeadphoneFile(String)
+    case processFailure(Int32)
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidMeasurementDirectory:
+            return "Invalid measurement directory"
+        case .invalidTestSignal:
+            return "Invalid test signal"
+        case .missingCalibrationFile(let path):
+            return "Missing calibration file: \(path)"
+        case .missingHeadphoneFile(let path):
+            return "Missing headphone file: \(path)"
+        case .processFailure(let status):
+            return "Process failed with status: \(status)"
+        }
+    }
+}
+
 #else
+// Non-macOS stub implementation
 final class ProcessingViewModel {
+    var state: ProcessingState = .idle
     var log: String = ""
-    var isRunning: Bool = false
-    var progress: Double? = nil
-    var remainingTime: Double? = nil
     var autoLog: Bool = false
     var logFile: String = ""
-    func run(measurementDir: String, testSignal: String, channelBalance: String?, targetLevel: String?, playbackDevice: String?, recordingDevice: String?, outputChannels: [Int]?, inputChannels: [Int]?, enableCompensation: Bool, headphoneEqEnabled: Bool, headphoneFile: String?, compensationType: String?, diffuseField: Bool, xCurveAction: String, xCurveType: String?, xCurveInCapture: Bool, decayTime: String, decayEnabled: Bool, specificLimit: String, specificLimitEnabled: Bool, genericLimit: String, genericLimitEnabled: Bool, frCombinationMethod: String, frCombinationEnabled: Bool, roomCorrection: Bool, roomTarget: String, micCalibration: String, interactiveDelays: Bool) {}
+    var isRunning: Bool { false }
+    var progress: Double? { nil }
+    var remainingTime: Double? { nil }
+    
+    func run(configuration: ProcessingConfiguration) {}
+    func record(configuration: RecordingConfiguration) {}
+    func recordHeadphoneEQ(configuration: RecordingConfiguration) {}
+    func recordRoomResponse(configuration: RecordingConfiguration) {}
     func layoutWizard(layout: String, dir: String) {}
     func captureWizard(layout: String, dir: String) {}
-    func record(measurementDir: String, testSignal: String, playbackDevice: String, recordingDevice: String, outputFile: String?) {}
-    func recordHeadphoneEQ(measurementDir: String, testSignal: String, playbackDevice: String, recordingDevice: String) {}
-    func recordRoomResponse(measurementDir: String, testSignal: String, playbackDevice: String, recordingDevice: String) {}
-    func exportHesuviPreset(measurementDir: String, destination: String) {}
-    func clearLog() {}
+    func exportHesuviPreset(from: String, to: String) {}
     func cancel() {}
+    func clearLog() {}
+    func logMessage(_ text: String) {}
 }
 #endif

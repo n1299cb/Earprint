@@ -71,8 +71,8 @@ final class AudioDeviceViewModel: ObservableObject {
     }
     
     deinit {
-        levelMonitoringTimer?.invalidate()
-        levelMonitoringTimer = nil
+        // Timer cleanup will happen automatically when the object is deallocated
+        // We can't access @MainActor properties from deinit
     }
     
     // MARK: - Public Methods
@@ -186,6 +186,43 @@ final class AudioDeviceViewModel: ObservableObject {
         return warnings
     }
     
+    func getDeviceDisplayName(_ device: AudioDevice) -> String {
+        var name = device.name
+        
+        if device.isDefaultInput && device.canRecord {
+            name += " (Default Input)"
+        }
+        
+        if device.isDefaultOutput && device.canPlayback {
+            name += " (Default Output)"
+        }
+        
+        return name
+    }
+    
+    func getChannelSummary(_ device: AudioDevice) -> String {
+        var components: [String] = []
+        
+        if device.maxInputChannels > 0 {
+            components.append("\(device.maxInputChannels) in")
+        }
+        
+        if device.maxOutputChannels > 0 {
+            components.append("\(device.maxOutputChannels) out")
+        }
+        
+        return components.joined(separator: ", ")
+    }
+    
+    func getSampleRateText(_ device: AudioDevice) -> String {
+        let rate = device.nominalSampleRate
+        if rate >= 1000 {
+            return String(format: "%.1fkHz", rate / 1000)
+        } else {
+            return String(format: "%.0fHz", rate)
+        }
+    }
+    
     // MARK: - Private Methods
     private func scanAudioDevices() async -> ([AudioDevice], [AudioDevice]) {
         return await withCheckedContinuation { continuation in
@@ -195,6 +232,46 @@ final class AudioDeviceViewModel: ObservableObject {
                 let outputs = devices.filter { $0.canPlayback }
                 continuation.resume(returning: (inputs, outputs))
             }
+        }
+    }
+    
+    private func updateChannelMapping() {
+        guard autoMapChannels else { return }
+        autoMapChannelsAction()
+    }
+    
+    private func updateDeviceWarnings() {
+        deviceWarnings = validateDeviceConfiguration()
+    }
+    
+    private func updateAudioLevels() {
+        // Mock implementation for level monitoring
+        // In a real implementation, you would set up proper Core Audio level monitoring
+        
+        if let inputDevice = selectedInputDevice, inputDevice.canRecord {
+            let channelCount = inputDevice.maxInputChannels
+            let levels = Array(repeating: Float.random(in: -60...0), count: min(channelCount, 8))
+            let peak = levels.max() ?? -60.0
+            
+            inputLevels = AudioLevelMeter(
+                channelCount: channelCount,
+                levels: levels,
+                peak: peak,
+                timestamp: Date()
+            )
+        }
+        
+        if let outputDevice = selectedOutputDevice, outputDevice.canPlayback {
+            let channelCount = outputDevice.maxOutputChannels
+            let levels = Array(repeating: Float.random(in: -60...0), count: min(channelCount, 8))
+            let peak = levels.max() ?? -60.0
+            
+            outputLevels = AudioLevelMeter(
+                channelCount: channelCount,
+                levels: levels,
+                peak: peak,
+                timestamp: Date()
+            )
         }
     }
 }
@@ -268,9 +345,11 @@ private struct AudioDeviceScanner {
         var dataSize: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(deviceID, &propertyAddress, 0, nil, &dataSize) == noErr else { return nil }
         
-        var cfString: CFString?
-        guard AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, &cfString) == noErr,
-              let string = cfString else { return nil }
+        let stringPointer = UnsafeMutablePointer<CFString?>.allocate(capacity: 1)
+        defer { stringPointer.deallocate() }
+        
+        guard AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, stringPointer) == noErr,
+              let string = stringPointer.pointee else { return nil }
         
         return string as String
     }
@@ -285,9 +364,11 @@ private struct AudioDeviceScanner {
         var dataSize: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(deviceID, &propertyAddress, 0, nil, &dataSize) == noErr else { return nil }
         
-        var cfString: CFString?
-        guard AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, &cfString) == noErr,
-              let string = cfString else { return nil }
+        let stringPointer = UnsafeMutablePointer<CFString?>.allocate(capacity: 1)
+        defer { stringPointer.deallocate() }
+        
+        guard AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, stringPointer) == noErr,
+              let string = stringPointer.pointee else { return nil }
         
         return string as String
     }
@@ -377,88 +458,6 @@ private struct AudioDeviceScanner {
         }
         
         return isRunning != 0
-    }
-}
-    
-    private func updateChannelMapping() {
-        guard autoMapChannels else { return }
-        autoMapChannelsAction()
-    }
-    
-    private func updateDeviceWarnings() {
-        deviceWarnings = validateDeviceConfiguration()
-    }
-    
-    private func updateAudioLevels() {
-        // Mock implementation for level monitoring
-        // In a real implementation, you would set up proper Core Audio level monitoring
-        
-        if let inputDevice = selectedInputDevice, inputDevice.canRecord {
-            let channelCount = inputDevice.maxInputChannels
-            let levels = Array(repeating: Float.random(in: -60...0), count: min(channelCount, 8))
-            let peak = levels.max() ?? -60.0
-            
-            inputLevels = AudioLevelMeter(
-                channelCount: channelCount,
-                levels: levels,
-                peak: peak,
-                timestamp: Date()
-            )
-        }
-        
-        if let outputDevice = selectedOutputDevice, outputDevice.canPlayback {
-            let channelCount = outputDevice.maxOutputChannels
-            let levels = Array(repeating: Float.random(in: -60...0), count: min(channelCount, 8))
-            let peak = levels.max() ?? -60.0
-            
-            outputLevels = AudioLevelMeter(
-                channelCount: channelCount,
-                levels: levels,
-                peak: peak,
-                timestamp: Date()
-            )
-        }
-    }
-}
-
-// MARK: - Utility Extensions
-extension AudioDeviceViewModel {
-    
-    func getDeviceDisplayName(_ device: AudioDevice) -> String {
-        var name = device.name
-        
-        if device.isDefaultInput && device.canRecord {
-            name += " (Default Input)"
-        }
-        
-        if device.isDefaultOutput && device.canPlayback {
-            name += " (Default Output)"
-        }
-        
-        return name
-    }
-    
-    func getChannelSummary(_ device: AudioDevice) -> String {
-        var components: [String] = []
-        
-        if device.maxInputChannels > 0 {
-            components.append("\(device.maxInputChannels) in")
-        }
-        
-        if device.maxOutputChannels > 0 {
-            components.append("\(device.maxOutputChannels) out")
-        }
-        
-        return components.joined(separator: ", ")
-    }
-    
-    func getSampleRateText(_ device: AudioDevice) -> String {
-        let rate = device.nominalSampleRate
-        if rate >= 1000 {
-            return String(format: "%.1fkHz", rate / 1000)
-        } else {
-            return String(format: "%.0fHz", rate)
-        }
     }
 }
 
