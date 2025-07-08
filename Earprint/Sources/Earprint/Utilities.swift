@@ -3,6 +3,21 @@ import Foundation
 import AppKit
 #endif
 
+#if canImport(SwiftUI)
+import SwiftUI
+
+extension View {
+    @ViewBuilder
+    func ifAvailableMacOS13<Content: View>(_ transform: (Self) -> Content) -> some View {
+        if #available(macOS 13, *) {
+            transform(self)
+        } else {
+            self
+        }
+    }
+}
+#endif
+
 /// Root directory of the package.
 ///
 /// When built as part of the full project the repository root may sit one
@@ -16,11 +31,11 @@ let packageRoot = URL(fileURLWithPath: #filePath)
 /// Root directory of the repository (one level above the package)
 let repoRoot = packageRoot.deletingLastPathComponent()
 /// Directory containing bundled scripts.
-let scriptsRoot = (Bundle.module.resourceURL ?? packageRoot)
+let scriptsRoot = (Bundle.main.resourceURL ?? packageRoot)
     .appendingPathComponent("Scripts")
 
 /// URL to the bundled Python interpreter if present.
-let embeddedPythonURL: URL? = Bundle.module
+let embeddedPythonURL: URL? = Bundle.main
     .url(forResource: "Python", withExtension: "framework", subdirectory: "EmbeddedPython")?
     .appendingPathComponent("Versions")
     .appendingPathComponent("Current")
@@ -29,7 +44,7 @@ let embeddedPythonURL: URL? = Bundle.module
 /// Returns the path to an included script, searching multiple locations.
 func scriptPath(_ name: String, scriptsRoot: URL = scriptsRoot, repoRoot: URL = repoRoot) -> String {
     let fm = FileManager.default
-    if let path = Bundle.module.path(forResource: name, ofType: nil) {
+    if let path = Bundle.main.path(forResource: name, ofType: nil) {
         return path
     }
     let direct = scriptsRoot.appendingPathComponent(name).path

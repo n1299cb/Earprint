@@ -1,154 +1,174 @@
-#if canImport(SwiftUI)
 import SwiftUI
-import AppKit
-
-class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-    }
-
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
-    }
-}
 
 struct EarprintApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     
-    static func createTempDir() -> String {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Earprint-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url.path
-    }
+    // MARK: - ViewModels
+    @StateObject private var processingVM = ProcessingViewModel()
+    @StateObject private var configurationVM = ConfigurationViewModel()
+    @StateObject private var audioDeviceVM = AudioDeviceViewModel()
+    @StateObject private var recordingVM = RecordingViewModel()
     
-    @State private var measurementDir: String
-    @State private var testSignal: String = ""
-    @State private var channelBalance: String = ""
-    @State private var targetLevel: String = ""
-    @State private var selectedLayout: String = "7.1"
-    @State private var playbackDevice: String = ""
-    @State private var recordingDevice: String = ""
-    @State private var channelMapping: [String: [Int]] = [:]
-    @State private var enableCompensation: Bool = false
-    @State private var headphoneEqEnabled: Bool = false
-    @State private var headphoneFile: String = ""
-    @State private var compensationType: String = "diffuse"
-    @State private var customCompensationFile: String = ""
-    @State private var diffuseField: Bool = false
-    @State private var xCurveAction: String = "None"
-    @State private var xCurveType: String = "minus3db_oct"
-    @State private var xCurveInCapture: Bool = false
-    @State private var decayTime: String = ""
-    @State private var decayEnabled: Bool = false
-    @State private var specificLimit: String = ""
-    @State private var specificLimitEnabled: Bool = false
-    @State private var genericLimit: String = ""
-    @State private var genericLimitEnabled: Bool = false
-    @State private var frCombinationMethod: String = "average"
-    @State private var frCombinationEnabled: Bool = false
-    @State private var roomCorrection: Bool = false
-    @State private var roomTarget: String = ""
-    @State private var micCalibration: String = ""
-    @State private var interactiveDelays: Bool = false
-    @StateObject private var processingVM = ModernProcessingViewModel()
-
-    enum Section: String, CaseIterable, Identifiable {
-        case setup = "Setup"
-        case execution = "Execution"
-        case postProcessing = "Post-Processing"
-        case roomResponse = "Room Response"
-        case presets = "Presets"
-        case profiles = "Profiles"
-        case rooms = "Rooms"
-        case visualization = "Visualization"
-
-        var id: Self { self }
-        
-        var icon: String {
-            switch self {
-            case .setup: return "wrench.and.screwdriver"
-            case .execution: return "play.circle"
-            case .postProcessing: return "wand.and.stars.inverse"
-            case .roomResponse: return "waveform"
-            case .presets: return "slider.horizontal.3"
-            case .profiles: return "person.crop.circle"
-            case .rooms: return "house"
-            case .visualization: return "chart.bar"
-            }
-        }
-    }
-
-    @AppStorage("selectedSection") private var lastSectionRaw: String = Section.setup.rawValue
+    // MARK: - App State
+    @AppStorage("selectedSection") private var lastSectionRaw: String = Section.recording.rawValue
     @State private var selectedSection: Section?
-
-    init() {
-        _measurementDir = State(initialValue: EarprintApp.createTempDir())
-    }
-
+    @State private var showingSettings = false
+    
+    // MARK: - Basic App Storage for RecordingView
+    @AppStorage("measurementDir") private var measurementDir: String = ""
+    @AppStorage("testSignal") private var testSignal: String = ""
+    
     var body: some Scene {
         WindowGroup {
-            Group {
-                if #available(macOS 13, *) {
-                    NavigationSplitView {
-                        List(Section.allCases, selection: $selectedSection) { section in
-                            Label(section.rawValue, systemImage: section.icon)
-                                .tag(section)
-                        }
-                        .frame(minWidth: 150)
-                    } detail: {
-                        if let section = selectedSection {
-                            detailView(for: section)
-                        } else {
-                            Text("Select a section")
-                        }
+            NavigationSplitView {
+                // Sidebar
+                List(Section.allCases, id: \.self, selection: $selectedSection) { section in
+                    NavigationLink(value: section) {
+                        Label(section.rawValue, systemImage: section.icon)
                     }
-                    .frame(minWidth: 600, minHeight: 400)
-                } else {
-                    NavigationView {
-                        List(selection: $selectedSection) {
-                            ForEach(Section.allCases) { section in
-                                NavigationLink(destination: detailView(for: section), tag: section, selection: $selectedSection) {
-                                    Label(section.rawValue, systemImage: section.icon)
-                                }
+                }
+                .navigationTitle("Earprint")
+                .navigationSplitViewColumnWidth(min: 200, ideal: 250)
+                .onAppear {
+                    print("Sidebar appeared with sections: \(Section.allCases.map { $0.rawValue })")
+                    print("Selected section: \(selectedSection?.rawValue ?? "nil")")
+                    func testResources() {
+                        if let scriptsPath = Bundle.main.resourcePath {
+                            let scriptsURL = URL(fileURLWithPath: scriptsPath).appendingPathComponent("Scripts")
+                            print("Scripts path: \(scriptsURL.path)")
+                            print("Scripts exists: \(FileManager.default.fileExists(atPath: scriptsURL.path))")
+                            
+                            // List contents
+                            if let contents = try? FileManager.default.contentsOfDirectory(atPath: scriptsURL.path) {
+                                print("Scripts contents: \(contents)")
                             }
                         }
-                        .frame(minWidth: 150)
-                        .listStyle(SidebarListStyle())
-                        
-                        if let section = selectedSection {
-                            detailView(for: section)
-                        } else {
-                            Text("Select a section")
-                        }
                     }
-                    .frame(minWidth: 600, minHeight: 400)
                 }
+            } detail: {
+                // Detail View
+                Group {
+                    if let section = selectedSection {
+                        detailView(for: section)
+                    } else {
+                        WelcomeView()
+                    }
+                }
+                .navigationSplitViewColumnWidth(min: 500, ideal: 800)
             }
             .onAppear {
-                selectedSection = Section(rawValue: lastSectionRaw) ?? .setup
+                // Set initial section if none selected
+                if selectedSection == nil {
+                    selectedSection = Section(rawValue: lastSectionRaw) ?? .recording
+                }
+                
+                // Load configuration when app starts
+                configurationVM.loadConfiguration()
+                audioDeviceVM.refreshDevices()
+                
+                // Load defaults from configuration and initialize RecordingViewModel
+                if measurementDir.isEmpty && !configurationVM.appConfiguration.defaultMeasurementDir.isEmpty {
+                    measurementDir = configurationVM.appConfiguration.defaultMeasurementDir
+                }
+                if testSignal.isEmpty && !configurationVM.appConfiguration.defaultTestSignal.isEmpty {
+                    testSignal = configurationVM.appConfiguration.defaultTestSignal
+                }
+                
+                // Initialize recording validation
+                if !measurementDir.isEmpty {
+                    recordingVM.validatePaths(measurementDir)
+                }
             }
             .onChange(of: selectedSection) { newValue in
-                lastSectionRaw = newValue?.rawValue ?? Section.setup.rawValue
+                lastSectionRaw = newValue?.rawValue ?? Section.recording.rawValue
+            }
+            .onChange(of: measurementDir) { newValue in
+                // Update recording validation when measurement directory changes
+                recordingVM.validatePaths(newValue)
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView(
+                    configurationVM: configurationVM,
+                    audioDeviceVM: audioDeviceVM
+                )
+                .frame(minWidth: 800, minHeight: 600)
             }
         }
+        .windowResizability(.contentSize)
+        .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .appTermination) {
                 Button("Quit Earprint") {
+                    // Save configuration before quitting
+                    if configurationVM.isDirty {
+                        configurationVM.saveConfiguration()
+                    }
                     NSApplication.shared.terminate(nil)
                 }
                 .keyboardShortcut("q")
             }
+            
+            CommandGroup(after: .appInfo) {
+                Divider()
+                
+                Button("Preferences...") {
+                    showingSettings = true
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+            
             CommandMenu("Navigate") {
-                Button("Setup") {
-                    selectedSection = .setup
+                Button("Recording") {
+                    selectedSection = .recording
                 }
                 .keyboardShortcut("1", modifiers: .command)
                 
-                Button("Execution") {
-                    selectedSection = .execution
+                Button("Visualization") {
+                    selectedSection = .visualization
                 }
-                .keyboardShortcut("2", modifiers: .command)
+                .keyboardShortcut("3", modifiers: .command)
+                
+                Divider()
+                
+                Button("Preferences...") {
+                    showingSettings = true
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+            
+            CommandMenu("Audio") {
+                Button("Refresh Audio Devices") {
+                    audioDeviceVM.refreshDevices()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                
+                Button("Auto Map Channels") {
+                    audioDeviceVM.autoMapChannelsAction()
+                }
+                .disabled(audioDeviceVM.selectedInputDevice == nil || audioDeviceVM.selectedOutputDevice == nil)
+            }
+            
+            CommandMenu("Recording") {
+                Button("Start Recording") {
+                    // This would trigger recording from menu
+                }
+                .disabled(processingVM.isRunning)
+                .keyboardShortcut("r", modifiers: .command)
+                
+                Button("Stop Recording") {
+                    processingVM.cancel()
+                }
+                .disabled(!processingVM.isRunning)
+                .keyboardShortcut(".", modifiers: .command)
+                
+                Divider()
+                
+                Button("Open Recording Directory") {
+                    if !measurementDir.isEmpty {
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: measurementDir)
+                    }
+                }
+                .disabled(measurementDir.isEmpty)
+                .keyboardShortcut("o", modifiers: [.command, .shift])
             }
         }
     }
@@ -156,97 +176,97 @@ struct EarprintApp: App {
     @ViewBuilder
     private func detailView(for section: Section) -> some View {
         switch section {
-        case .setup:
-            CompatibleModernSetupView(viewModel: processingVM,
-                                      measurementDir: $measurementDir,
-                                      testSignal: $testSignal,
-                                      channelBalance: $channelBalance,
-                                      targetLevel: $targetLevel,
-                                      selectedLayout: $selectedLayout,
-                                      playbackDevice: $playbackDevice,
-                                      recordingDevice: $recordingDevice,
-                                      channelMapping: $channelMapping)
-        case .execution:
-            ModernExecutionView(viewModel: processingVM,
-                                    measurementDir: measurementDir,
-                                    testSignal: testSignal,
-                                    channelBalance: channelBalance,
-                                    targetLevel: targetLevel,
-                                    playbackDevice: playbackDevice,
-                                    recordingDevice: recordingDevice,
-                                    outputChannels: channelMapping["output_channels"] ?? [],
-                                    inputChannels: channelMapping["input_channels"] ?? [],
-                                    selectedLayout: selectedLayout,
-                                    enableCompensation: $enableCompensation,
-                                    headphoneEqEnabled: $headphoneEqEnabled,
-                                    headphoneFile: $headphoneFile,
-                                    compensationType: $compensationType,
-                                    customCompensationFile: $customCompensationFile,
-                                    diffuseField: $diffuseField,
-                                    xCurveAction: $xCurveAction,
-                                    xCurveType: $xCurveType,
-                                    xCurveInCapture: $xCurveInCapture,
-                                    decayTime: decayTime,
-                                    decayEnabled: decayEnabled,
-                                    specificLimit: specificLimit,
-                                    specificLimitEnabled: specificLimitEnabled,
-                                    genericLimit: genericLimit,
-                                    genericLimitEnabled: genericLimitEnabled,
-                                    frCombinationMethod: frCombinationMethod,
-                                    frCombinationEnabled: frCombinationEnabled,
-                                    roomCorrection: roomCorrection,
-                                    roomTarget: roomTarget,
-                                    micCalibration: micCalibration,
-                                    interactiveDelays: interactiveDelays)
-        case .postProcessing:
-            ModernPostProcessingView(viewModel: processingVM,
-                                     measurementDir: measurementDir,
-                                     testSignal: testSignal,
-                                     playbackDevice: playbackDevice,
-                                     recordingDevice: recordingDevice,
-                                     enableCompensation: $enableCompensation,
-                                     headphoneEqEnabled: $headphoneEqEnabled,
-                                     headphoneFile: $headphoneFile,
-                                     compensationType: $compensationType,
-                                     customCompensationFile: $customCompensationFile,
-                                     diffuseField: $diffuseField,
-                                     xCurveAction: $xCurveAction,
-                                     xCurveType: $xCurveType,
-                                     xCurveInCapture: $xCurveInCapture,
-                                     channelBalance: $channelBalance,
-                                     targetLevel: $targetLevel,
-                                     decayTime: $decayTime,
-                                     decayEnabled: $decayEnabled,
-                                     specificLimit: $specificLimit,
-                                     specificLimitEnabled: $specificLimitEnabled,
-                                     genericLimit: $genericLimit,
-                                     genericLimitEnabled: $genericLimitEnabled,
-                                     frCombinationMethod: $frCombinationMethod,
-                                     frCombinationEnabled: $frCombinationEnabled,
-                                     roomCorrection: $roomCorrection,
-                                     roomTarget: $roomTarget,
-                                     micCalibration: $micCalibration,
-                                     interactiveDelays: $interactiveDelays)
-        case .roomResponse:
-            RoomResponseView(viewModel: processingVM,
-                             measurementDir: measurementDir,
-                             testSignal: testSignal,
-                             playbackDevice: playbackDevice,
-                             recordingDevice: recordingDevice)
-        case .presets:
-            PresetView(viewModel: processingVM,
-                       measurementDir: measurementDir)
-        case .profiles:
-            ProfileView(viewModel: processingVM,
-                        measurementDir: $measurementDir,
-                        headphoneFile: $headphoneFile,
-                        playbackDevice: $playbackDevice)
-        case .rooms:
-            RoomPresetView(viewModel: processingVM,
-                           measurementDir: $measurementDir)
+        case .recording:
+            RecordingView(
+                processingVM: processingVM,
+                recordingVM: recordingVM,
+                audioDeviceVM: audioDeviceVM,
+                configurationVM: configurationVM
+            )
         case .visualization:
-            VisualizationView(measurementDir: measurementDir)
+            VisualizationView(processingVM: processingVM)
+                .environmentObject(configurationVM)
         }
     }
 }
-#endif
+
+// MARK: - Welcome View
+struct WelcomeView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "waveform.circle")
+                .font(.system(size: 80))
+                .foregroundColor(.accentColor)
+            
+            Text("Welcome to Earprint")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+            
+            Text("Create personalized binaural room impulse responses for immersive headphone audio")
+                .font(.title3)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("• Select Recording from the sidebar to start")
+                Text("• Configure audio devices in Settings")
+                Text("• View results in Visualization")
+                Text("• Use keyboard shortcuts for quick navigation")
+            }
+            .font(.body)
+            .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: 600)
+        .padding()
+    }
+}
+
+// MARK: - Section Enum
+enum Section: String, CaseIterable, Identifiable {
+    case recording = "Recording"
+    case visualization = "Visualization"
+    
+    var id: String { rawValue }
+    
+    var icon: String {
+        switch self {
+        case .recording: return "record.circle"
+        case .visualization: return "chart.line.uptrend.xyaxis"
+        }
+    }
+}
+
+// MARK: - Placeholder Views for missing implementations
+struct VisualizationView: View {
+    @ObservedObject var processingVM: ProcessingViewModel
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 60))
+                .foregroundColor(.accentColor)
+            
+            Text("Visualization")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+            
+            Text("View frequency response graphs and analysis")
+                .font(.title3)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("• Frequency response charts")
+                Text("• Before/after comparisons")
+                Text("• Processing results analysis")
+                Text("• Export graphs and data")
+            }
+            .font(.body)
+            .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: 600)
+        .padding()
+        .navigationTitle("Visualization")
+    }
+}
