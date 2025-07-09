@@ -1,0 +1,754 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0415206B2E1DB50F00F19D45 /* EmbeddedPython in Resources */ = {isa = PBXBuildFile; fileRef = 0415206A2E1DB50F00F19D45 /* EmbeddedPython */; };
+		0496C7192E1CF1E0004015FE /* Scripts in Resources */ = {isa = PBXBuildFile; fileRef = 0496C7182E1CF1E0004015FE /* Scripts */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0465E3232E19E4AC00ADA056 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0465E30C2E19E4AB00ADA056 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0465E3132E19E4AB00ADA056;
+			remoteInfo = Earprint;
+		};
+		0465E32D2E19E4AC00ADA056 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0465E30C2E19E4AB00ADA056 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0465E3132E19E4AB00ADA056;
+			remoteInfo = Earprint;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		046DDE2F2E19E9AE000D0FE3 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 12;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0415206A2E1DB50F00F19D45 /* EmbeddedPython */ = {isa = PBXFileReference; lastKnownFileType = folder; name = EmbeddedPython; path = Resources/EmbeddedPython; sourceTree = "<group>"; };
+		0465E3142E19E4AB00ADA056 /* Earprint.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Earprint.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0465E3222E19E4AC00ADA056 /* EarprintTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EarprintTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0465E32C2E19E4AC00ADA056 /* EarprintUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EarprintUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0496C7182E1CF1E0004015FE /* Scripts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Scripts; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0496C61A2E1CE657004015FE /* Exceptions for "Resources" folder in "Earprint" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				EmbeddedPython/Python.framework,
+				EmbeddedPython/README.md,
+			);
+			target = 0465E3132E19E4AB00ADA056 /* Earprint */;
+		};
+		0496C7172E1CE724004015FE /* Exceptions for "Scripts" folder in "Earprint" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				benchmark_realtime_convolver.py,
+				capture_wizard.py,
+				channel_tester.py,
+				compensation.py,
+				config.py,
+				constants.py,
+				"data/demo/BL,SL.wav",
+				data/demo/FC.wav,
+				"data/demo/FL,FR.wav",
+				data/demo/headphones.wav,
+				data/demo/README.md,
+				"data/demo/room-BL,SL-left.wav",
+				"data/demo/room-BL,SL-right.wav",
+				"data/demo/room-FC-left.wav",
+				"data/demo/room-FC-right.wav",
+				"data/demo/room-FL,FR-left.wav",
+				"data/demo/room-FL,FR-right.wav",
+				"data/demo/room-mic-calibration.txt",
+				"data/demo/room-SR,BR-left.wav",
+				"data/demo/room-SR,BR-right.wav",
+				"data/demo/room-target.csv",
+				"data/demo/SR,BR.wav",
+				"data/harman-in-room-headphone-target-wo-bass.csv",
+				"data/harman-in-room-headphone-target.csv",
+				"data/harman-in-room-loudspeaker-target-wo-bass.csv",
+				"data/harman-in-room-loudspeaker-target.csv",
+				"data/sweep-6.15s-48000Hz-32bit-2.93Hz-24000Hz.pkl",
+				"data/sweep-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav",
+				"data/sweep-seg-FL-mono-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav",
+				"data/sweep-seg-FL-stereo-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav",
+				"data/sweep-seg-FL,FR-stereo-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav",
+				"data/sweep-seg-FR-stereo-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav",
+				data/tracking_calibration.json,
+				earprint.py,
+				export_frequency_response.py,
+				generate_layout.py,
+				gui.py,
+				hrir.py,
+				impulse_response_estimator.py,
+				impulse_response.py,
+				level_meter.py,
+				models/__init__.py,
+				models/measurement_setup.py,
+				models/playback_settings.py,
+				models/processing_settings.py,
+				models/recorder_settings.py,
+				models/room_preset.py,
+				models/user_profile.py,
+				preset_manager.py,
+				"processing-presets.json",
+				profiles.json,
+				pytest.ini,
+				realtime_convolution.py,
+				recorder.py,
+				"research/headphone-feedback-compensation/compare_headphone_compensation_methods.py",
+				"research/headphone-feedback-compensation/comparison.png",
+				"research/headphone-feedback-compensation/feedback.png",
+				"research/headphone-feedback-compensation/feedforward.png",
+				"research/headphone-feedback-compensation/generate_headphone_sweep_sequence.py",
+				"research/headphone-feedback-compensation/README.md",
+				"research/headphone-reseat-repeatability/headphone_reseat_repeatability.py",
+				"research/headphone-reseat-repeatability/README.md",
+				"research/headphone-reseat-repeatability/Results.png",
+				"research/level-vs-balance/level_vs_balance.py",
+				"research/level-vs-balance/none.png",
+				"research/level-vs-balance/objective2.png",
+				"research/level-vs-balance/README.md",
+				"research/level-vs-balance/volume2-48-52.png",
+				"research/level-vs-balance/volume2.png",
+				"research/mic-calibration/mic_calibration.py",
+				"research/mic-calibration/README.md",
+				"research/mic-calibration/Results.png",
+				"research/open-vs-closed-ear-canal/open_vs_closed_ear_canal.py",
+				"research/open-vs-closed-ear-canal/README.md",
+				"research/open-vs-closed-ear-canal/Results.png",
+				research/README.md,
+				"research/reverberation-management/lundeby.ipynb",
+				"research/reverberation-management/README.md",
+				"research/reverberation-management/reverberation_management.py",
+				"research/room-targets/room_targets.py",
+				"research/speaker-balance-graphs/Post.png",
+				"research/speaker-balance-graphs/Pre.png",
+				"research/speaker-balance-graphs/README.md",
+				"research/speaker-balance-graphs/Room.png",
+				"research/speaker-balance-graphs/speaker_balance_graphs.py",
+				"research/virtual-room-target/README.md",
+				"research/virtual-room-target/Results.png",
+				"research/virtual-room-target/virtual_room_target.py",
+				room_correction.py,
+				room_presets.json,
+				room_presets.py,
+				speaker_delay.py,
+				tests/conftest.py,
+				tests/test_capture_wizard.py,
+				tests/test_earprint_51.py,
+				tests/test_earprint_714.py,
+				tests/test_earprint_ambisonics.py,
+				tests/test_earprint.py,
+				tests/test_head_tracking.py,
+				tests/test_layouts.py,
+				tests/test_measurement_setup_vm.py,
+				tests/test_preset_manager.py,
+				tests/test_realtime_convolver.py,
+				tests/test_room_presets.py,
+				tests/test_speaker_delay.py,
+				tests/test_user_layout.py,
+				tests/test_user_profiles.py,
+				tests/test_viewmodels.py,
+				tools/remove_excessive_headers.py,
+				tracking.py,
+				user_profiles.py,
+				utils.py,
+				viewmodel/__init__.py,
+				viewmodel/layout.py,
+				viewmodel/measurement_setup.py,
+				viewmodel/playback.py,
+				viewmodel/processing.py,
+				viewmodel/recorder.py,
+			);
+			target = 0465E3132E19E4AB00ADA056 /* Earprint */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		0465E3162E19E4AB00ADA056 /* Earprint */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Earprint;
+			sourceTree = "<group>";
+		};
+		0465E3252E19E4AC00ADA056 /* EarprintTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = EarprintTests;
+			sourceTree = "<group>";
+		};
+		0465E32F2E19E4AC00ADA056 /* EarprintUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = EarprintUITests;
+			sourceTree = "<group>";
+		};
+		0496C51C2E1CE4E9004015FE /* Resources */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0496C61A2E1CE657004015FE /* Exceptions for "Resources" folder in "Earprint" target */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		0496C6A12E1CE70A004015FE /* Scripts */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0496C7172E1CE724004015FE /* Exceptions for "Scripts" folder in "Earprint" target */,
+			);
+			path = Scripts;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0465E3112E19E4AB00ADA056 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0465E31F2E19E4AC00ADA056 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0465E3292E19E4AC00ADA056 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0465E30B2E19E4AB00ADA056 = {
+			isa = PBXGroup;
+			children = (
+				0415206A2E1DB50F00F19D45 /* EmbeddedPython */,
+				0496C7182E1CF1E0004015FE /* Scripts */,
+				0465E3162E19E4AB00ADA056 /* Earprint */,
+				0465E3252E19E4AC00ADA056 /* EarprintTests */,
+				0465E32F2E19E4AC00ADA056 /* EarprintUITests */,
+				0465E3152E19E4AB00ADA056 /* Products */,
+				0496C51C2E1CE4E9004015FE /* Resources */,
+				0496C6A12E1CE70A004015FE /* Scripts */,
+			);
+			sourceTree = "<group>";
+		};
+		0465E3152E19E4AB00ADA056 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				0465E3142E19E4AB00ADA056 /* Earprint.app */,
+				0465E3222E19E4AC00ADA056 /* EarprintTests.xctest */,
+				0465E32C2E19E4AC00ADA056 /* EarprintUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0465E3132E19E4AB00ADA056 /* Earprint */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0465E3362E19E4AC00ADA056 /* Build configuration list for PBXNativeTarget "Earprint" */;
+			buildPhases = (
+				0465E3102E19E4AB00ADA056 /* Sources */,
+				0465E3112E19E4AB00ADA056 /* Frameworks */,
+				0465E3122E19E4AB00ADA056 /* Resources */,
+				046DDE2F2E19E9AE000D0FE3 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0465E3162E19E4AB00ADA056 /* Earprint */,
+				0496C51C2E1CE4E9004015FE /* Resources */,
+				0496C6A12E1CE70A004015FE /* Scripts */,
+			);
+			name = Earprint;
+			packageProductDependencies = (
+			);
+			productName = Earprint;
+			productReference = 0465E3142E19E4AB00ADA056 /* Earprint.app */;
+			productType = "com.apple.product-type.application";
+		};
+		0465E3212E19E4AC00ADA056 /* EarprintTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0465E3392E19E4AC00ADA056 /* Build configuration list for PBXNativeTarget "EarprintTests" */;
+			buildPhases = (
+				0465E31E2E19E4AC00ADA056 /* Sources */,
+				0465E31F2E19E4AC00ADA056 /* Frameworks */,
+				0465E3202E19E4AC00ADA056 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0465E3242E19E4AC00ADA056 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0465E3252E19E4AC00ADA056 /* EarprintTests */,
+			);
+			name = EarprintTests;
+			packageProductDependencies = (
+			);
+			productName = EarprintTests;
+			productReference = 0465E3222E19E4AC00ADA056 /* EarprintTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		0465E32B2E19E4AC00ADA056 /* EarprintUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0465E33C2E19E4AC00ADA056 /* Build configuration list for PBXNativeTarget "EarprintUITests" */;
+			buildPhases = (
+				0465E3282E19E4AC00ADA056 /* Sources */,
+				0465E3292E19E4AC00ADA056 /* Frameworks */,
+				0465E32A2E19E4AC00ADA056 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0465E32E2E19E4AC00ADA056 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0465E32F2E19E4AC00ADA056 /* EarprintUITests */,
+			);
+			name = EarprintUITests;
+			packageProductDependencies = (
+			);
+			productName = EarprintUITests;
+			productReference = 0465E32C2E19E4AC00ADA056 /* EarprintUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		0465E30C2E19E4AB00ADA056 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					0465E3132E19E4AB00ADA056 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					0465E3212E19E4AC00ADA056 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 0465E3132E19E4AB00ADA056;
+					};
+					0465E32B2E19E4AC00ADA056 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 0465E3132E19E4AB00ADA056;
+					};
+				};
+			};
+			buildConfigurationList = 0465E30F2E19E4AB00ADA056 /* Build configuration list for PBXProject "Earprint" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 0465E30B2E19E4AB00ADA056;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 0465E3152E19E4AB00ADA056 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				0465E3132E19E4AB00ADA056 /* Earprint */,
+				0465E3212E19E4AC00ADA056 /* EarprintTests */,
+				0465E32B2E19E4AC00ADA056 /* EarprintUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0465E3122E19E4AB00ADA056 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0415206B2E1DB50F00F19D45 /* EmbeddedPython in Resources */,
+				0496C7192E1CF1E0004015FE /* Scripts in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0465E3202E19E4AC00ADA056 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0465E32A2E19E4AC00ADA056 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0465E3102E19E4AB00ADA056 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0465E31E2E19E4AC00ADA056 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0465E3282E19E4AC00ADA056 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0465E3242E19E4AC00ADA056 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0465E3132E19E4AB00ADA056 /* Earprint */;
+			targetProxy = 0465E3232E19E4AC00ADA056 /* PBXContainerItemProxy */;
+		};
+		0465E32E2E19E4AC00ADA056 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0465E3132E19E4AB00ADA056 /* Earprint */;
+			targetProxy = 0465E32D2E19E4AC00ADA056 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0465E3342E19E4AC00ADA056 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 92Q8839ZKW;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		0465E3352E19E4AC00ADA056 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 92Q8839ZKW;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		0465E3372E19E4AC00ADA056 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 92Q8839ZKW;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Resources/EmbeddedPython",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Earprint;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.blaringsound.Earprint;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		0465E3382E19E4AC00ADA056 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 92Q8839ZKW;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Resources/EmbeddedPython",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Earprint;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.blaringsound.Earprint;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		0465E33A2E19E4AC00ADA056 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 92Q8839ZKW;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.blaringsound.EarprintTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Earprint.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Earprint";
+			};
+			name = Debug;
+		};
+		0465E33B2E19E4AC00ADA056 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 92Q8839ZKW;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.blaringsound.EarprintTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Earprint.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Earprint";
+			};
+			name = Release;
+		};
+		0465E33D2E19E4AC00ADA056 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 92Q8839ZKW;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.blaringsound.EarprintUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Earprint;
+			};
+			name = Debug;
+		};
+		0465E33E2E19E4AC00ADA056 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 92Q8839ZKW;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.blaringsound.EarprintUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Earprint;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0465E30F2E19E4AB00ADA056 /* Build configuration list for PBXProject "Earprint" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0465E3342E19E4AC00ADA056 /* Debug */,
+				0465E3352E19E4AC00ADA056 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0465E3362E19E4AC00ADA056 /* Build configuration list for PBXNativeTarget "Earprint" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0465E3372E19E4AC00ADA056 /* Debug */,
+				0465E3382E19E4AC00ADA056 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0465E3392E19E4AC00ADA056 /* Build configuration list for PBXNativeTarget "EarprintTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0465E33A2E19E4AC00ADA056 /* Debug */,
+				0465E33B2E19E4AC00ADA056 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0465E33C2E19E4AC00ADA056 /* Build configuration list for PBXNativeTarget "EarprintUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0465E33D2E19E4AC00ADA056 /* Debug */,
+				0465E33E2E19E4AC00ADA056 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 0465E30C2E19E4AB00ADA056 /* Project object */;
+}

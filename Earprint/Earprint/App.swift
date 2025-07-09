@@ -7,6 +7,7 @@ struct EarprintApp: App {
     @StateObject private var configurationVM = ConfigurationViewModel()
     @StateObject private var audioDeviceVM = AudioDeviceViewModel()
     @StateObject private var recordingVM = RecordingViewModel()
+    @StateObject private var workspaceManager = WorkspaceManager()
     
     // MARK: - App State
     @AppStorage("selectedSection") private var lastSectionRaw: String = Section.recording.rawValue
@@ -65,6 +66,9 @@ struct EarprintApp: App {
                 configurationVM.loadConfiguration()
                 audioDeviceVM.refreshDevices()
                 
+                // Initialize workspace paths with current workspace
+                initializeWorkspacePaths()
+                
                 // Load defaults from configuration and initialize RecordingViewModel
                 if measurementDir.isEmpty && !configurationVM.appConfiguration.defaultMeasurementDir.isEmpty {
                     measurementDir = configurationVM.appConfiguration.defaultMeasurementDir
@@ -84,6 +88,10 @@ struct EarprintApp: App {
             .onChange(of: measurementDir) { newValue in
                 // Update recording validation when measurement directory changes
                 recordingVM.validatePaths(newValue)
+            }
+            .onChange(of: workspaceManager.currentWorkspace) { newWorkspace in
+                // Update measurement directory when workspace changes
+                updateWorkspacePaths()
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView(
@@ -122,10 +130,20 @@ struct EarprintApp: App {
                 }
                 .keyboardShortcut("1", modifiers: .command)
                 
+                Button("Workspace") {
+                    selectedSection = .workspace
+                }
+                .keyboardShortcut("2", modifiers: .command)
+                
+                Button("Post-Processing") {
+                    selectedSection = .postProcessing
+                }
+                .keyboardShortcut("3", modifiers: .command)
+                
                 Button("Visualization") {
                     selectedSection = .visualization
                 }
-                .keyboardShortcut("3", modifiers: .command)
+                .keyboardShortcut("4", modifiers: .command)
                 
                 Divider()
                 
@@ -163,12 +181,29 @@ struct EarprintApp: App {
                 Divider()
                 
                 Button("Open Recording Directory") {
-                    if !measurementDir.isEmpty {
-                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: measurementDir)
-                    }
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspaceManager.currentWorkspace.path)
                 }
-                .disabled(measurementDir.isEmpty)
                 .keyboardShortcut("o", modifiers: [.command, .shift])
+            }
+            
+            CommandMenu("Workspace") {
+                Button("New Workspace") {
+                    workspaceManager.createNewWorkspace()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                
+                Button("Export Workspace") {
+                    exportCurrentWorkspace()
+                }
+                .disabled(!workspaceManager.hasRecordings && !workspaceManager.hasProcessedData)
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                
+                Divider()
+                
+                Button("Clear Workspace") {
+                    clearCurrentWorkspace()
+                }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
             }
         }
     }
@@ -183,10 +218,93 @@ struct EarprintApp: App {
                 audioDeviceVM: audioDeviceVM,
                 configurationVM: configurationVM
             )
+            .environmentObject(workspaceManager)
+        case .workspace:
+            WorkspaceView()
+                .environmentObject(workspaceManager)
+        case .postProcessing:
+            PostProcessingView(viewModel: processingVM,
+                               measurementDir: $measurementDir,
+                               testSignal: $testSignal)
+            .environmentObject(workspaceManager)
         case .visualization:
             VisualizationView(processingVM: processingVM)
                 .environmentObject(configurationVM)
+                .environmentObject(workspaceManager)
         }
+    }
+    
+    // MARK: - Workspace Helper Functions
+    
+    private func initializeWorkspacePaths() {
+        // Set measurement directory to current workspace if not already set
+        if measurementDir.isEmpty {
+            measurementDir = workspaceManager.currentWorkspace.path
+        }
+        
+        // Set test signal to workspace test signal if available
+        let workspaceTestSignal = workspaceManager.getTestSignalPath()
+        if testSignal.isEmpty && !workspaceTestSignal.isEmpty {
+            testSignal = workspaceTestSignal
+        }
+    }
+    
+    private func updateWorkspacePaths() {
+        // Update measurement directory to current workspace
+        measurementDir = workspaceManager.currentWorkspace.path
+        
+        // Update test signal to workspace test signal
+        let workspaceTestSignal = workspaceManager.getTestSignalPath()
+        if !workspaceTestSignal.isEmpty {
+            testSignal = workspaceTestSignal
+        }
+        
+        // Validate paths for recording
+        recordingVM.validatePaths(measurementDir)
+    }
+    
+    private func exportCurrentWorkspace() {
+        #if canImport(AppKit)
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.title = "Export Workspace"
+        panel.prompt = "Export"
+        panel.nameFieldStringValue = workspaceManager.workspaceName
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            Task {
+                do {
+                    try await workspaceManager.exportWorkspace(to: url)
+                } catch {
+                    await MainActor.run {
+                        print("Export failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+        #endif
+    }
+    
+    private func clearCurrentWorkspace() {
+        #if canImport(AppKit)
+        let alert = NSAlert()
+        alert.messageText = "Clear Workspace"
+        alert.informativeText = "This will permanently delete all files in the current workspace. This action cannot be undone."
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            do {
+                let contents = try FileManager.default.contentsOfDirectory(at: workspaceManager.currentWorkspace, includingPropertiesForKeys: nil)
+                for item in contents {
+                    try FileManager.default.removeItem(at: item)
+                }
+            } catch {
+                print("Failed to clear workspace: \(error)")
+            }
+        }
+        #endif
     }
 }
 
@@ -210,6 +328,7 @@ struct WelcomeView: View {
             
             VStack(alignment: .leading, spacing: 8) {
                 Text("• Select Recording from the sidebar to start")
+                Text("• Manage files in Workspace")
                 Text("• Configure audio devices in Settings")
                 Text("• View results in Visualization")
                 Text("• Use keyboard shortcuts for quick navigation")
@@ -225,6 +344,8 @@ struct WelcomeView: View {
 // MARK: - Section Enum
 enum Section: String, CaseIterable, Identifiable {
     case recording = "Recording"
+    case workspace = "Workspace"
+    case postProcessing = "Post-Processing"
     case visualization = "Visualization"
     
     var id: String { rawValue }
@@ -232,6 +353,8 @@ enum Section: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .recording: return "record.circle"
+        case .workspace: return "folder.badge.gearshape"
+        case .postProcessing: return "wrench"
         case .visualization: return "chart.line.uptrend.xyaxis"
         }
     }

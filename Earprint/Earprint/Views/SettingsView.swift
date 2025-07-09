@@ -27,12 +27,32 @@ struct SettingsView: View {
     @State private var enableDetailedLogging = false
     @State private var rememberWindowPosition = true
     
+    // MARK: - Channel Warning State
+    @State private var channelWarningText: String = ""
+    
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general = "General"
         case audio = "Audio Devices"
         case advanced = "Advanced"
         
         var id: String { rawValue }
+        
+        var icon: String {
+            switch self {
+            case .general: return "gear"
+            case .audio: return "speaker.wave.3"
+            case .advanced: return "slider.horizontal.3"
+            }
+        }
+    }
+    
+    // AudioDevice struct matching SetupView
+    struct AudioDevice: Identifiable {
+        let id: Int
+        let name: String
+        let maxOutput: Int
+        let maxInput: Int
+    }
 
 // MARK: - Simple Channel Mapping View
 struct SimpleChannelMappingView: View {
@@ -172,23 +192,6 @@ struct SimpleChannelMappingView: View {
         channelMapping["input_channels"] = Array(micSelections.prefix(2))
     }
 }
-        
-        var icon: String {
-            switch self {
-            case .general: return "gear"
-            case .audio: return "speaker.wave.3"
-            case .advanced: return "slider.horizontal.3"
-            }
-        }
-    }
-    
-    // AudioDevice struct matching SetupView
-    struct AudioDevice: Identifiable {
-        let id: Int
-        let name: String
-        let maxOutput: Int
-        let maxInput: Int
-    }
     
     var body: some View {
         NavigationSplitView {
@@ -262,6 +265,9 @@ struct SimpleChannelMappingView: View {
             loadAudioDevices()
             loadLayouts()
         }
+        .onChange(of: selectedPlaybackDevice) { _ in updateChannelWarning() }
+        .onChange(of: selectedRecordingDevice) { _ in updateChannelWarning() }
+        .onChange(of: selectedLayout) { _ in updateChannelWarning() }
     }
     
     // MARK: - General Settings
@@ -393,7 +399,7 @@ struct SimpleChannelMappingView: View {
                     }
                 }
                 
-                SettingsSection(title: "Speaker Layout", icon: "speakers") {
+                SettingsSection(title: "Speaker Layout", icon: "hifispeaker.2") {
                     VStack(spacing: 16) {
                         SettingsRow(
                             title: "Default Speaker Layout",
@@ -430,8 +436,8 @@ struct SimpleChannelMappingView: View {
                             }
                         }
                         
-                        if !channelWarning.isEmpty {
-                            Text(channelWarning)
+                        if !channelWarningText.isEmpty {
+                            Text(channelWarningText)
                                 .font(.caption)
                                 .foregroundColor(.red)
                                 .padding(.top, 4)
@@ -522,7 +528,7 @@ struct SimpleChannelMappingView: View {
         }
     }
     
-    // MARK: - Computed Properties
+    // MARK: - Computed Properties (made more stable)
     private var selectedPlaybackChannels: Int {
         playbackDevices.first(where: { String($0.id) == selectedPlaybackDevice })?.maxOutput ?? 0
     }
@@ -538,23 +544,6 @@ struct SimpleChannelMappingView: View {
             return "Mapped: \(outputChannels) out, \(inputChannels) in"
         }
         return ""
-    }
-    
-    private var channelWarning: String {
-        guard !selectedPlaybackDevice.isEmpty && !selectedRecordingDevice.isEmpty else { return "" }
-        
-        var warnings: [String] = []
-        let speakerCount = fetchSpeakerLabels(layout: selectedLayout).count
-        
-        if selectedPlaybackChannels < speakerCount && speakerCount > 0 {
-            warnings.append("Playback device only has \(selectedPlaybackChannels) channels while layout requires \(speakerCount)")
-        }
-        if selectedRecordingChannels < 2 {
-            let suffix = selectedRecordingChannels == 1 ? "" : "s"
-            warnings.append("Recording device only has \(selectedRecordingChannels) channel\(suffix); two are required")
-        }
-        
-        return warnings.joined(separator: ". ")
     }
     
     // MARK: - Helper Methods
@@ -912,6 +901,26 @@ struct SimpleChannelMappingView: View {
         return labels.isEmpty ? nil : labels
     }
     
+    private func updateChannelWarning() {
+        guard !selectedPlaybackDevice.isEmpty && !selectedRecordingDevice.isEmpty else {
+            channelWarningText = ""
+            return
+        }
+        
+        var warnings: [String] = []
+        let speakerCount = fetchSpeakerLabels(layout: selectedLayout).count
+        
+        if selectedPlaybackChannels < speakerCount && speakerCount > 0 {
+            warnings.append("Playback device only has \(selectedPlaybackChannels) channels while layout requires \(speakerCount)")
+        }
+        if selectedRecordingChannels < 2 {
+            let suffix = selectedRecordingChannels == 1 ? "" : "s"
+            warnings.append("Recording device only has \(selectedRecordingChannels) channel\(suffix); two are required")
+        }
+        
+        channelWarningText = warnings.joined(separator: ". ")
+    }
+    
     private func resetToDefaults() {
         defaultMeasurementDir = ""
         defaultTestSignal = ""
@@ -922,6 +931,7 @@ struct SimpleChannelMappingView: View {
         selectedRecordingDevice = ""
         selectedLayout = "7.1"
         channelMapping = [:]
+        channelWarningText = ""
     }
     
     private func loadCurrentSettings() {

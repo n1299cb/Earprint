@@ -3,6 +3,26 @@ import SwiftUI
 import Foundation
 
 // MARK: - Recording Models
+struct RecordingConfiguration {
+    let measurementDir: String
+    let testSignal: String
+    let playbackDevice: String
+    let recordingDevice: String
+    let outputFile: String
+    let speakerLayout: String?
+    let recordingGroup: String?
+    
+    init(measurementDir: String, testSignal: String, playbackDevice: String, recordingDevice: String, outputFile: String, speakerLayout: String? = nil, recordingGroup: String? = nil) {
+        self.measurementDir = measurementDir
+        self.testSignal = testSignal
+        self.playbackDevice = playbackDevice
+        self.recordingDevice = recordingDevice
+        self.outputFile = outputFile
+        self.speakerLayout = speakerLayout
+        self.recordingGroup = recordingGroup
+    }
+}
+
 struct RecordingInfo: Identifiable, Equatable {
     let id = UUID()
     let name: String
@@ -37,6 +57,24 @@ enum RecordingState: Equatable {
         default:
             return false
         }
+    }
+}
+
+// MARK: - Speaker Layout Support Types
+// These types mirror the RecordingView types but are defined independently to avoid circular dependencies
+struct SpeakerLayoutInfo {
+    let name: String
+    let displayName: String
+    let groups: [RecordingGroup]
+    let icon: String
+}
+
+struct RecordingGroup {
+    let name: String
+    let speakers: [String]
+    
+    var filename: String {
+        return "\(name).wav"
     }
 }
 
@@ -192,6 +230,72 @@ final class RecordingViewModel: ObservableObject {
     
     func deselectAll() {
         selectedRecordings.removeAll()
+    }
+    
+    // MARK: - Speaker Layout Methods
+    func getSpeakerLayouts(completion: @escaping ([String: SpeakerLayoutInfo]) -> Void) {
+        // This method should call the Python backend to get available speaker layouts
+        // For now, provide a fallback implementation that would be replaced with actual Python integration
+        
+        // Simulated call to Python backend
+        // In reality, this would call something like:
+        // pythonBridge.getSpeakerLayouts { layoutsData in ... }
+        
+        DispatchQueue.global(qos: .background).async {
+            // Simulate network/Python call delay
+            Thread.sleep(forTimeInterval: 0.1)
+            
+            // This data should come from Python constants.py
+            let simulatedLayouts: [String: SpeakerLayoutInfo] = [
+                "2.0": SpeakerLayoutInfo(
+                    name: "2.0",
+                    displayName: "Stereo (2.0)",
+                    groups: [RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"])],
+                    icon: "speaker.2"
+                ),
+                "5.1": SpeakerLayoutInfo(
+                    name: "5.1",
+                    displayName: "5.1 Surround",
+                    groups: [
+                        RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"]),
+                        RecordingGroup(name: "FC", speakers: ["FC"]),
+                        RecordingGroup(name: "BL,BR", speakers: ["BL", "BR"])
+                    ],
+                    icon: "speaker.wave.3"
+                ),
+                "7.1": SpeakerLayoutInfo(
+                    name: "7.1",
+                    displayName: "7.1 Surround",
+                    groups: [
+                        RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"]),
+                        RecordingGroup(name: "FC", speakers: ["FC"]),
+                        RecordingGroup(name: "SL,SR", speakers: ["SL", "SR"]),
+                        RecordingGroup(name: "BL,BR", speakers: ["BL", "BR"])
+                    ],
+                    icon: "speaker.wave.3"
+                ),
+                "7.1.4": SpeakerLayoutInfo(
+                    name: "7.1.4",
+                    displayName: "7.1.4 Atmos",
+                    groups: [
+                        RecordingGroup(name: "FL,FC,FR,SL,SR,BL,BR,TFL,TFR,TBL,TBR", speakers: ["FL", "FC", "FR", "SL", "SR", "BL", "BR", "TFL", "TFR", "TBL", "TBR"])
+                    ],
+                    icon: "airpodspro"
+                ),
+                "9.1.6": SpeakerLayoutInfo(
+                    name: "9.1.6",
+                    displayName: "9.1.6 Atmos",
+                    groups: [
+                        RecordingGroup(name: "FL,FC,FR,SL,SR,BL,BR,WL,WR,TFL,TFR,TSL,TSR,TBL,TBR", speakers: ["FL", "FC", "FR", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR", "TSL", "TSR", "TBL", "TBR"])
+                    ],
+                    icon: "airpodspro"
+                )
+            ]
+            
+            DispatchQueue.main.async {
+                completion(simulatedLayouts)
+            }
+        }
     }
     
     // MARK: - Legacy Support Methods
@@ -455,6 +559,58 @@ final class RecordingViewModel: ObservableObject {
 
 #else
 // Non-macOS stub implementation
+struct RecordingConfiguration {
+    let measurementDir: String
+    let testSignal: String
+    let playbackDevice: String
+    let recordingDevice: String
+    let outputFile: String
+    let speakerLayout: String?
+    let recordingGroup: String?
+}
+
+struct RecordingInfo: Identifiable, Equatable {
+    let id = UUID()
+    let name: String = ""
+    let path: String = ""
+    let dateModified: Date = Date()
+    let size: Int64 = 0
+    let isDirectory: Bool = false
+    
+    static func == (lhs: RecordingInfo, rhs: RecordingInfo) -> Bool {
+        lhs.path == rhs.path
+    }
+}
+
+struct FileValidationResult {
+    let isValid: Bool = false
+    let errorMessage: String? = nil
+    let suggestions: [String] = []
+}
+
+enum RecordingState: Equatable {
+    case idle
+    case scanning
+    case validating
+    case saving
+    case error(String)
+    
+    var isProcessing: Bool { false }
+}
+
+struct SpeakerLayoutInfo {
+    let name: String = ""
+    let displayName: String = ""
+    let groups: [RecordingGroup] = []
+    let icon: String = ""
+}
+
+struct RecordingGroup {
+    let name: String = ""
+    let speakers: [String] = []
+    var filename: String { "" }
+}
+
 final class RecordingViewModel: ObservableObject {
     @Published var state: RecordingState = .idle
     @Published var hasFiles: Bool = false
@@ -479,6 +635,7 @@ final class RecordingViewModel: ObservableObject {
     func selectAll() {}
     func deselectAll() {}
     func updateLatestRecording(_ measurementDir: String) {}
+    func getSpeakerLayouts(completion: @escaping ([String: SpeakerLayoutInfo]) -> Void) {}
     func getRecordingSize(_ recording: RecordingInfo) -> String { "" }
     func getRecordingAge(_ recording: RecordingInfo) -> String { "" }
     func isAudioFile(_ recording: RecordingInfo) -> Bool { false }

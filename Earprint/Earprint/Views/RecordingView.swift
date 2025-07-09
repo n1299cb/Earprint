@@ -8,16 +8,15 @@ struct RecordingView: View {
     @ObservedObject var recordingVM: RecordingViewModel
     @ObservedObject var audioDeviceVM: AudioDeviceViewModel
     @ObservedObject var configurationVM: ConfigurationViewModel
+    @EnvironmentObject var workspaceManager: WorkspaceManager
     
     // MARK: - Recording Settings
-    @State private var measurementDir: String = ""
     @State private var testSignalPath: String = ""
     @State private var recordingType: RecordingType = .measurement
     @State private var outputFileName: String = ""
     @State private var useCustomName: Bool = false
     
     // MARK: - UI State
-    @State private var showingDirectoryPicker = false
     @State private var showingTestSignalPicker = false
     @State private var showingRecordingResults = false
     @State private var recordingResultsURL: URL?
@@ -56,12 +55,32 @@ struct RecordingView: View {
         }
     }
     
+    private var canStartRecording: Bool {
+        !testSignalPath.isEmpty &&
+        audioDeviceVM.selectedInputDevice != nil &&
+        audioDeviceVM.selectedOutputDevice != nil &&
+        !processingVM.isRunning
+    }
+    
+    private var finalOutputPath: String {
+        if useCustomName && !outputFileName.isEmpty {
+            return workspaceManager.currentWorkspace.appendingPathComponent("\(outputFileName).wav").path
+        } else {
+            return workspaceManager.currentWorkspace.appendingPathComponent("\(recordingType.defaultFileName).wav").path
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
-            // Header Section
+            // Header Section with Recording Button
             RecordingHeaderView(
                 recordingType: $recordingType,
-                isRecording: processingVM.isRunning
+                isRecording: processingVM.isRunning,
+                canStartRecording: canStartRecording,
+                finalOutputPath: finalOutputPath,
+                currentWorkspace: workspaceManager.workspaceName,
+                startRecordingAction: startRecording,
+                audioDeviceVM: audioDeviceVM
             )
             
             Divider()
@@ -69,33 +88,17 @@ struct RecordingView: View {
             // Main Content
             ScrollView {
                 VStack(spacing: 24) {
+                    // Workspace Info
+                    WorkspaceInfoSection(workspaceManager: workspaceManager)
+                    
                     // Recording Configuration
                     RecordingConfigurationSection(
-                        measurementDir: $measurementDir,
                         testSignalPath: $testSignalPath,
                         outputFileName: $outputFileName,
                         useCustomName: $useCustomName,
                         recordingType: recordingType,
-                        showingDirectoryPicker: $showingDirectoryPicker,
                         showingTestSignalPicker: $showingTestSignalPicker,
-                        configurationVM: configurationVM
-                    )
-                    
-                    // Audio Device Status
-                    AudioDeviceStatusSection(audioDeviceVM: audioDeviceVM)
-                    
-                    // Recording Controls
-                    RecordingControlsSection(
-                        processingVM: processingVM,
-                        recordingVM: recordingVM,
-                        measurementDir: measurementDir,
-                        testSignalPath: testSignalPath,
-                        outputFileName: outputFileName,
-                        useCustomName: useCustomName,
-                        recordingType: recordingType,
-                        audioDeviceVM: audioDeviceVM,
-                        resultURL: $recordingResultsURL,
-                        showingResults: $showingRecordingResults
+                        workspaceManager: workspaceManager
                     )
                     
                     // Progress and Status
@@ -106,7 +109,7 @@ struct RecordingView: View {
                     // Recent Recordings
                     RecentRecordingsSection(
                         recordingVM: recordingVM,
-                        measurementDir: measurementDir
+                        workspaceManager: workspaceManager
                     )
                 }
                 .padding()
@@ -118,7 +121,8 @@ struct RecordingView: View {
             RecordingStatusBar(
                 processingVM: processingVM,
                 audioDeviceVM: audioDeviceVM,
-                recordingVM: recordingVM
+                recordingVM: recordingVM,
+                workspaceManager: workspaceManager
             )
         }
         .navigationTitle("Recording")
@@ -126,15 +130,8 @@ struct RecordingView: View {
             loadDefaults()
             refreshRecordings()
         }
-        .onChange(of: measurementDir) { _ in
-            recordingVM.validatePaths(measurementDir)
-        }
-        .fileImporter(
-            isPresented: $showingDirectoryPicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            handleDirectorySelection(result)
+        .onChange(of: workspaceManager.currentWorkspace) { _ in
+            refreshRecordings()
         }
         .fileImporter(
             isPresented: $showingTestSignalPicker,
@@ -152,31 +149,17 @@ struct RecordingView: View {
     
     // MARK: - Helper Methods
     private func loadDefaults() {
-        measurementDir = configurationVM.appConfiguration.defaultMeasurementDir
-        testSignalPath = configurationVM.appConfiguration.defaultTestSignal
-        
-        if measurementDir.isEmpty {
-            measurementDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Recordings").path ?? ""
+        // Load test signal from workspace first, then fall back to configuration
+        let workspaceTestSignal = workspaceManager.getTestSignalPath()
+        if !workspaceTestSignal.isEmpty {
+            testSignalPath = workspaceTestSignal
+        } else if !configurationVM.appConfiguration.defaultTestSignal.isEmpty {
+            testSignalPath = configurationVM.appConfiguration.defaultTestSignal
         }
     }
     
     private func refreshRecordings() {
-        if !measurementDir.isEmpty {
-            recordingVM.validatePaths(measurementDir)
-        }
-    }
-    
-    private func handleDirectorySelection(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            if let url = urls.first {
-                measurementDir = url.path
-                configurationVM.addRecentProject(url.path)
-            }
-        case .failure(let error):
-            // Handle error - could show alert
-            print("Directory selection error: \(error)")
-        }
+        recordingVM.validatePaths(workspaceManager.currentWorkspace.path)
     }
     
     private func handleTestSignalSelection(_ result: Result<[URL], Error>) {
@@ -186,8 +169,97 @@ struct RecordingView: View {
                 testSignalPath = url.path
             }
         case .failure(let error):
-            // Handle error - could show alert
             print("Test signal selection error: \(error)")
+        }
+    }
+    
+    private func startRecording() {
+        if processingVM.isRunning {
+            processingVM.cancel()
+        } else {
+            guard let inputDevice = audioDeviceVM.selectedInputDevice,
+                  let outputDevice = audioDeviceVM.selectedOutputDevice else { return }
+            
+            // Create configuration for recording
+            let configuration = RecordingConfiguration(
+                measurementDir: workspaceManager.currentWorkspace.path,
+                testSignal: testSignalPath,
+                playbackDevice: String(outputDevice.id),
+                recordingDevice: String(inputDevice.id),
+                outputFile: finalOutputPath
+            )
+            
+            // Start recording based on type
+            switch recordingType {
+            case .measurement:
+                processingVM.record(configuration: configuration)
+            case .headphone:
+                processingVM.recordHeadphoneEQ(configuration: configuration)
+            case .roomResponse:
+                processingVM.recordRoomResponse(configuration: configuration)
+            case .testSweep:
+                processingVM.record(configuration: configuration)
+            }
+            
+            // Set up completion handling
+            recordingResultsURL = URL(fileURLWithPath: finalOutputPath)
+        }
+    }
+}
+
+// MARK: - Workspace Info Section
+struct WorkspaceInfoSection: View {
+    @ObservedObject var workspaceManager: WorkspaceManager
+    
+    var body: some View {
+        GroupBox("Current Workspace") {
+            VStack(spacing: 12) {
+                HStack {
+                    Image(systemName: "folder.badge.gearshape")
+                        .foregroundColor(.accentColor)
+                        .font(.title2)
+                    
+                    VStack(alignment: .leading) {
+                        Text(workspaceManager.workspaceName)
+                            .font(.headline)
+                        
+                        Text("Recordings will be saved to this workspace")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    VStack(alignment: .trailing, spacing: 4) {
+                        let stats = workspaceManager.getWorkspaceStats()
+                        
+                        Text("\(stats.audioFiles) audio files")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text(stats.formattedSize)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                HStack {
+                    Button("Open in Finder") {
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspaceManager.currentWorkspace.path)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    
+                    Spacer()
+                    
+                    Text(workspaceManager.currentWorkspace.path)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .padding()
         }
     }
 }
@@ -196,9 +268,15 @@ struct RecordingView: View {
 struct RecordingHeaderView: View {
     @Binding var recordingType: RecordingView.RecordingType
     let isRecording: Bool
+    let canStartRecording: Bool
+    let finalOutputPath: String
+    let currentWorkspace: String
+    let startRecordingAction: () -> Void
+    @ObservedObject var audioDeviceVM: AudioDeviceViewModel
     
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
+            // Type Selection and Info
             HStack {
                 Image(systemName: recordingType.icon)
                     .font(.title2)
@@ -213,6 +291,47 @@ struct RecordingHeaderView: View {
                 }
                 
                 Spacer()
+                
+                // Audio Device Status Indicators
+                HStack(spacing: 12) {
+                    // Input Device Indicator
+                    HStack(spacing: 4) {
+                        Image(systemName: "mic")
+                            .foregroundColor(audioDeviceVM.selectedInputDevice != nil ? .green : .red)
+                            .font(.caption)
+                        
+                        if let device = audioDeviceVM.selectedInputDevice {
+                            Text(device.name)
+                                .font(.caption2)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: 80)
+                        } else {
+                            Text("No Input")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    // Output Device Indicator
+                    HStack(spacing: 4) {
+                        Image(systemName: "speaker.wave.2")
+                            .foregroundColor(audioDeviceVM.selectedOutputDevice != nil ? .green : .red)
+                            .font(.caption)
+                        
+                        if let device = audioDeviceVM.selectedOutputDevice {
+                            Text(device.name)
+                                .font(.caption2)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: 80)
+                        } else {
+                            Text("No Output")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
                 
                 if isRecording {
                     HStack(spacing: 8) {
@@ -229,6 +348,7 @@ struct RecordingHeaderView: View {
                 }
             }
             
+            // Recording Type Picker (only when not recording)
             if !isRecording {
                 Picker("Recording Type", selection: $recordingType) {
                     ForEach(RecordingView.RecordingType.allCases, id: \.self) { type in
@@ -238,6 +358,47 @@ struct RecordingHeaderView: View {
                 }
                 .pickerStyle(.segmented)
             }
+            
+            // Recording Button
+            VStack(spacing: 8) {
+                Button(action: startRecordingAction) {
+                    HStack {
+                        Image(systemName: isRecording ? "stop.circle.fill" : "record.circle")
+                            .font(.title2)
+                        
+                        Text(isRecording ? "Stop Recording" : "Start Recording")
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(isRecording ? Color.red : Color.accentColor)
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                }
+                .disabled(isRecording ? false : !canStartRecording)
+                
+                if !canStartRecording && !isRecording {
+                    Text("Configure audio devices and test signal")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                
+                // Output Preview (when ready or recording)
+                if canStartRecording || isRecording {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Recording will be saved to workspace:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text(finalOutputPath)
+                            .font(.system(.caption, design: .monospaced))
+                            .padding(8)
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(4)
+                    }
+                }
+            }
         }
         .padding()
         .background(Color.gray.opacity(0.05))
@@ -246,42 +407,16 @@ struct RecordingHeaderView: View {
 
 // MARK: - Recording Configuration Section
 struct RecordingConfigurationSection: View {
-    @Binding var measurementDir: String
     @Binding var testSignalPath: String
     @Binding var outputFileName: String
     @Binding var useCustomName: Bool
     let recordingType: RecordingView.RecordingType
-    @Binding var showingDirectoryPicker: Bool
     @Binding var showingTestSignalPicker: Bool
-    @ObservedObject var configurationVM: ConfigurationViewModel
+    @ObservedObject var workspaceManager: WorkspaceManager
     
     var body: some View {
         GroupBox("Recording Configuration") {
             VStack(spacing: 16) {
-                // Measurement Directory
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Output Directory", systemImage: "folder")
-                        .font(.headline)
-                    
-                    HStack {
-                        TextField("Select output directory...", text: $measurementDir)
-                            .textFieldStyle(.roundedBorder)
-                        
-                        Button("Browse") {
-                            showingDirectoryPicker = true
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    
-                    if !measurementDir.isEmpty && !FileManager.default.fileExists(atPath: measurementDir) {
-                        Label("Directory does not exist", systemImage: "exclamationmark.triangle")
-                            .foregroundColor(.orange)
-                            .font(.caption)
-                    }
-                }
-                
-                Divider()
-                
                 // Test Signal
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Test Signal", systemImage: "waveform")
@@ -295,12 +430,31 @@ struct RecordingConfigurationSection: View {
                             showingTestSignalPicker = true
                         }
                         .buttonStyle(.bordered)
+                        
+                        if !workspaceManager.availableTestSignals.isEmpty {
+                            Menu("Presets") {
+                                ForEach(workspaceManager.availableTestSignals) { signal in
+                                    Button(signal.name) {
+                                        if let path = workspaceManager.copyTestSignalToWorkspace(signal) {
+                                            testSignalPath = path
+                                        }
+                                    }
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
                     
-                    if !testSignalPath.isEmpty && !FileManager.default.fileExists(atPath: testSignalPath) {
-                        Label("Test signal file not found", systemImage: "exclamationmark.triangle")
-                            .foregroundColor(.orange)
-                            .font(.caption)
+                    if !testSignalPath.isEmpty {
+                        if FileManager.default.fileExists(atPath: testSignalPath) {
+                            Label("Test signal ready", systemImage: "checkmark.circle")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                        } else {
+                            Label("Test signal file not found", systemImage: "exclamationmark.triangle")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                        }
                     }
                 }
                 
@@ -329,195 +483,6 @@ struct RecordingConfigurationSection: View {
                 }
             }
             .padding()
-        }
-    }
-}
-
-// MARK: - Audio Device Status Section
-struct AudioDeviceStatusSection: View {
-    @ObservedObject var audioDeviceVM: AudioDeviceViewModel
-    
-    var body: some View {
-        GroupBox("Audio Device Status") {
-            VStack(spacing: 12) {
-                // Input Device
-                HStack {
-                    Image(systemName: "mic")
-                        .foregroundColor(audioDeviceVM.selectedInputDevice != nil ? .green : .red)
-                    
-                    VStack(alignment: .leading) {
-                        Text("Input Device")
-                            .font(.headline)
-                        Text(audioDeviceVM.selectedInputDevice?.name ?? "No device selected")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    if let device = audioDeviceVM.selectedInputDevice {
-                        Text("\(device.maxInputChannels) ch")
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.green.opacity(0.2))
-                            .cornerRadius(4)
-                    }
-                }
-                
-                Divider()
-                
-                // Output Device
-                HStack {
-                    Image(systemName: "speaker.wave.2")
-                        .foregroundColor(audioDeviceVM.selectedOutputDevice != nil ? .green : .red)
-                    
-                    VStack(alignment: .leading) {
-                        Text("Output Device")
-                            .font(.headline)
-                        Text(audioDeviceVM.selectedOutputDevice?.name ?? "No device selected")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    if let device = audioDeviceVM.selectedOutputDevice {
-                        Text("\(device.maxOutputChannels) ch")
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.green.opacity(0.2))
-                            .cornerRadius(4)
-                    }
-                }
-                
-                // Device Warnings
-                if !audioDeviceVM.deviceWarnings.isEmpty {
-                    Divider()
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(audioDeviceVM.deviceWarnings, id: \.self) { warning in
-                            Label(warning, systemImage: "exclamationmark.triangle")
-                                .foregroundColor(.orange)
-                                .font(.caption)
-                        }
-                    }
-                }
-            }
-            .padding()
-        }
-    }
-}
-
-// MARK: - Recording Controls Section
-struct RecordingControlsSection: View {
-    @ObservedObject var processingVM: ProcessingViewModel
-    @ObservedObject var recordingVM: RecordingViewModel
-    let measurementDir: String
-    let testSignalPath: String
-    let outputFileName: String
-    let useCustomName: Bool
-    let recordingType: RecordingView.RecordingType
-    @ObservedObject var audioDeviceVM: AudioDeviceViewModel
-    @Binding var resultURL: URL?
-    @Binding var showingResults: Bool
-    
-    private var canStartRecording: Bool {
-        !measurementDir.isEmpty &&
-        !testSignalPath.isEmpty &&
-        audioDeviceVM.selectedInputDevice != nil &&
-        audioDeviceVM.selectedOutputDevice != nil &&
-        !processingVM.isRunning
-    }
-    
-    private var finalOutputPath: String {
-        if useCustomName && !outputFileName.isEmpty {
-            return URL(fileURLWithPath: measurementDir).appendingPathComponent("\(outputFileName).wav").path
-        } else {
-            return URL(fileURLWithPath: measurementDir).appendingPathComponent("\(recordingType.defaultFileName).wav").path
-        }
-    }
-    
-    var body: some View {
-        GroupBox("Recording Controls") {
-            VStack(spacing: 16) {
-                // Recording Button
-                VStack(spacing: 8) {
-                    Button(action: startRecording) {
-                        HStack {
-                            Image(systemName: processingVM.isRunning ? "stop.circle.fill" : "record.circle")
-                                .font(.title2)
-                            
-                            Text(processingVM.isRunning ? "Stop Recording" : "Start Recording")
-                                .font(.headline)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(processingVM.isRunning ? Color.red : Color.accentColor)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                    }
-                    .disabled(processingVM.isRunning ? false : !canStartRecording)
-                    
-                    if !canStartRecording && !processingVM.isRunning {
-                        Text("Configure audio devices and paths in Settings")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                // Output Preview
-                if canStartRecording || processingVM.isRunning {
-                    Divider()
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Recording will be saved to:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Text(finalOutputPath)
-                            .font(.system(.caption, design: .monospaced))
-                            .padding(8)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(4)
-                    }
-                }
-            }
-            .padding()
-        }
-    }
-    
-    private func startRecording() {
-        if processingVM.isRunning {
-            processingVM.cancel()
-        } else {
-            guard let inputDevice = audioDeviceVM.selectedInputDevice,
-                  let outputDevice = audioDeviceVM.selectedOutputDevice else { return }
-            
-            // Create configuration for recording
-            let configuration = RecordingConfiguration(
-                measurementDir: measurementDir,
-                testSignal: testSignalPath,
-                playbackDevice: String(outputDevice.id),
-                recordingDevice: String(inputDevice.id),
-                outputFile: finalOutputPath
-            )
-            
-            // Start recording based on type
-            switch recordingType {
-            case .measurement:
-                processingVM.record(configuration: configuration)
-            case .headphone:
-                processingVM.recordHeadphoneEQ(configuration: configuration)
-            case .roomResponse:
-                processingVM.recordRoomResponse(configuration: configuration)
-            case .testSweep:
-                processingVM.record(configuration: configuration)
-            }
-            
-            // Set up completion handling
-            resultURL = URL(fileURLWithPath: finalOutputPath)
         }
     }
 }
@@ -566,16 +531,22 @@ struct RecordingProgressSection: View {
 // MARK: - Recent Recordings Section
 struct RecentRecordingsSection: View {
     @ObservedObject var recordingVM: RecordingViewModel
-    let measurementDir: String
+    @ObservedObject var workspaceManager: WorkspaceManager
     
     var body: some View {
         GroupBox("Recent Recordings") {
             VStack(spacing: 8) {
                 if recordingVM.recordings.isEmpty {
-                    Text("No recordings found")
-                        .foregroundColor(.secondary)
-                        .font(.caption)
-                        .padding()
+                    VStack(spacing: 8) {
+                        Text("No recordings in this workspace")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                        
+                        Text("Start recording to create audio files")
+                            .foregroundColor(.secondary)
+                            .font(.caption2)
+                    }
+                    .padding()
                 } else {
                     ForEach(recordingVM.recordings.prefix(5)) { recording in
                         RecentRecordingRow(recording: recording, recordingVM: recordingVM)
@@ -622,7 +593,6 @@ struct RecentRecordingRow: View {
             Spacer()
             
             Button("Show") {
-                // Could open file location or show details
                 NSWorkspace.shared.selectFile(recording.path, inFileViewerRootedAtPath: "")
             }
             .buttonStyle(.borderless)
@@ -637,6 +607,7 @@ struct RecordingStatusBar: View {
     @ObservedObject var processingVM: ProcessingViewModel
     @ObservedObject var audioDeviceVM: AudioDeviceViewModel
     @ObservedObject var recordingVM: RecordingViewModel
+    @ObservedObject var workspaceManager: WorkspaceManager
     
     var body: some View {
         HStack {
@@ -647,6 +618,16 @@ struct RecordingStatusBar: View {
                     .frame(width: 8, height: 8)
                 
                 Text(processingVM.isRunning ? "Recording" : "Ready")
+                    .font(.caption)
+            }
+            
+            Spacer()
+            
+            // Workspace Info
+            HStack(spacing: 4) {
+                Image(systemName: "folder")
+                    .foregroundColor(.accentColor)
+                Text(workspaceManager.workspaceName)
                     .font(.caption)
             }
             
@@ -700,7 +681,7 @@ struct RecordingResultsSheet: View {
                     .fontWeight(.bold)
                 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("File saved to:")
+                    Text("File saved to workspace:")
                         .font(.headline)
                     
                     Text(recordingURL.path)
