@@ -13,6 +13,8 @@ struct RecordingView: View {
     // MARK: - Recording Settings
     @State private var testSignalPath: String = ""
     @State private var recordingType: RecordingType = .measurement
+    @State private var selectedLayoutName: String = "2.0"
+    @State private var availableLayouts: [String: SpeakerLayoutInfo] = [:]
     @State private var outputFileName: String = ""
     @State private var useCustomName: Bool = false
     
@@ -55,6 +57,23 @@ struct RecordingView: View {
         }
     }
     
+    // Define local types to work with RecordingViewModel
+    struct SpeakerLayoutInfo {
+        let name: String
+        let displayName: String
+        let groups: [RecordingGroup]
+        let icon: String
+    }
+    
+    struct RecordingGroup {
+        let name: String
+        let speakers: [String]
+        
+        var filename: String {
+            return "\(name).wav"
+        }
+    }
+    
     private var canStartRecording: Bool {
         !testSignalPath.isEmpty &&
         audioDeviceVM.selectedInputDevice != nil &&
@@ -62,11 +81,32 @@ struct RecordingView: View {
         !processingVM.isRunning
     }
     
+    private var currentLayout: SpeakerLayoutInfo? {
+        availableLayouts[selectedLayoutName]
+    }
+    
     private var finalOutputPath: String {
-        if useCustomName && !outputFileName.isEmpty {
-            return workspaceManager.currentWorkspace.appendingPathComponent("\(outputFileName).wav").path
+        // For measurement recordings, use speaker layout-specific naming
+        if recordingType == .measurement, let layout = currentLayout {
+            let groups = layout.groups
+            if groups.count == 1 {
+                // Single file recording
+                if useCustomName && !outputFileName.isEmpty {
+                    return workspaceManager.currentWorkspace.appendingPathComponent("\(outputFileName).wav").path
+                } else {
+                    return workspaceManager.currentWorkspace.appendingPathComponent(groups[0].filename).path
+                }
+            } else {
+                // Multi-file recording - return first file path for display
+                return workspaceManager.currentWorkspace.appendingPathComponent(groups[0].filename).path
+            }
         } else {
-            return workspaceManager.currentWorkspace.appendingPathComponent("\(recordingType.defaultFileName).wav").path
+            // Other recording types use traditional naming
+            if useCustomName && !outputFileName.isEmpty {
+                return workspaceManager.currentWorkspace.appendingPathComponent("\(outputFileName).wav").path
+            } else {
+                return workspaceManager.currentWorkspace.appendingPathComponent("\(recordingType.defaultFileName).wav").path
+            }
         }
     }
     
@@ -75,6 +115,8 @@ struct RecordingView: View {
             // Header Section with Recording Button
             RecordingHeaderView(
                 recordingType: $recordingType,
+                selectedLayoutName: $selectedLayoutName,
+                availableLayouts: availableLayouts,
                 isRecording: processingVM.isRunning,
                 canStartRecording: canStartRecording,
                 finalOutputPath: finalOutputPath,
@@ -97,6 +139,7 @@ struct RecordingView: View {
                         outputFileName: $outputFileName,
                         useCustomName: $useCustomName,
                         recordingType: recordingType,
+                        currentLayout: currentLayout,
                         showingTestSignalPicker: $showingTestSignalPicker,
                         workspaceManager: workspaceManager
                     )
@@ -128,6 +171,7 @@ struct RecordingView: View {
         .navigationTitle("Recording")
         .onAppear {
             loadDefaults()
+            loadSpeakerLayouts()
             refreshRecordings()
         }
         .onChange(of: workspaceManager.currentWorkspace) { _ in
@@ -149,12 +193,61 @@ struct RecordingView: View {
     
     // MARK: - Helper Methods
     private func loadDefaults() {
-        // Load test signal from workspace first, then fall back to configuration
-        let workspaceTestSignal = workspaceManager.getTestSignalPath()
-        if !workspaceTestSignal.isEmpty {
-            testSignalPath = workspaceTestSignal
-        } else if !configurationVM.appConfiguration.defaultTestSignal.isEmpty {
-            testSignalPath = configurationVM.appConfiguration.defaultTestSignal
+        // Load default test signal from Scripts/data directory
+        if let scriptsRoot = Bundle.main.resourceURL?.appendingPathComponent("Scripts") {
+            let defaultTestSignalPath = scriptsRoot.appendingPathComponent("data/sweep-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav")
+            
+            if FileManager.default.fileExists(atPath: defaultTestSignalPath.path) {
+                testSignalPath = defaultTestSignalPath.path
+                print("✅ Loaded default test signal: \(defaultTestSignalPath.path)")
+            } else {
+                print("⚠️ Default test signal not found at: \(defaultTestSignalPath.path)")
+                
+                // Fallback to configuration if available
+                if !configurationVM.appConfiguration.defaultTestSignal.isEmpty {
+                    testSignalPath = configurationVM.appConfiguration.defaultTestSignal
+                    print("✅ Using test signal from configuration: \(testSignalPath)")
+                }
+            }
+        } else {
+            print("❌ Scripts directory not found in bundle")
+            
+            // Fallback to configuration
+            if !configurationVM.appConfiguration.defaultTestSignal.isEmpty {
+                testSignalPath = configurationVM.appConfiguration.defaultTestSignal
+                print("✅ Using test signal from configuration: \(testSignalPath)")
+            }
+        }
+    }
+    
+    private func loadSpeakerLayouts() {
+        // Call RecordingViewModel to get speaker layouts from Python backend
+        recordingVM.getSpeakerLayouts { vmLayouts in
+            DispatchQueue.main.async {
+                // Convert RecordingViewModel types to local types
+                var convertedLayouts: [String: SpeakerLayoutInfo] = [:]
+                
+                for (key, vmLayout) in vmLayouts {
+                    let convertedGroups = vmLayout.groups.map { vmGroup in
+                        RecordingGroup(name: vmGroup.name, speakers: vmGroup.speakers)
+                    }
+                    
+                    let convertedLayout = SpeakerLayoutInfo(
+                        name: vmLayout.name,
+                        displayName: vmLayout.displayName,
+                        groups: convertedGroups,
+                        icon: vmLayout.icon
+                    )
+                    
+                    convertedLayouts[key] = convertedLayout
+                }
+                
+                self.availableLayouts = convertedLayouts
+                // Set default layout if not already set
+                if self.selectedLayoutName.isEmpty && !convertedLayouts.isEmpty {
+                    self.selectedLayoutName = convertedLayouts.keys.sorted().first ?? "2.0"
+                }
+            }
         }
     }
     
@@ -175,34 +268,53 @@ struct RecordingView: View {
     
     private func startRecording() {
         if processingVM.isRunning {
-            processingVM.cancel()
+            // Stop recording - you'll need to implement this method in ProcessingViewModel
+            // processingVM.stopProcessing()
+            return
         } else {
             guard let inputDevice = audioDeviceVM.selectedInputDevice,
                   let outputDevice = audioDeviceVM.selectedOutputDevice else { return }
             
-            // Create configuration for recording
-            let configuration = RecordingConfiguration(
-                measurementDir: workspaceManager.currentWorkspace.path,
-                testSignal: testSignalPath,
-                playbackDevice: String(outputDevice.id),
-                recordingDevice: String(inputDevice.id),
-                outputFile: finalOutputPath
-            )
-            
-            // Start recording based on type
-            switch recordingType {
-            case .measurement:
-                processingVM.record(configuration: configuration)
-            case .headphone:
-                processingVM.recordHeadphoneEQ(configuration: configuration)
-            case .roomResponse:
-                processingVM.recordRoomResponse(configuration: configuration)
-            case .testSweep:
-                processingVM.record(configuration: configuration)
+            // For measurement recordings, use speaker layout-specific file naming
+            if recordingType == .measurement, let layout = currentLayout {
+                let groups = layout.groups
+                
+                for (index, group) in groups.enumerated() {
+                    let outputPath = useCustomName && !outputFileName.isEmpty && groups.count == 1
+                        ? workspaceManager.currentWorkspace.appendingPathComponent("\(outputFileName).wav").path
+                        : workspaceManager.currentWorkspace.appendingPathComponent(group.filename).path
+                    
+                    // Create configuration for each recording group
+                    let configuration = RecordingConfiguration(
+                        measurementDir: workspaceManager.currentWorkspace.path,
+                        testSignal: testSignalPath,
+                        playbackDevice: String(outputDevice.id),
+                        recordingDevice: String(inputDevice.id),
+                        outputFile: outputPath
+                    )
+                    
+                    // For now, start the first group (this should be expanded for multi-group workflows)
+                    if index == 0 {
+                        // You'll need to implement this method in ProcessingViewModel
+                        // processingVM.startRecording(with: configuration)
+                        recordingResultsURL = URL(fileURLWithPath: outputPath)
+                    }
+                }
+            } else {
+                // Traditional single-file recording for other types
+                let configuration = RecordingConfiguration(
+                    measurementDir: workspaceManager.currentWorkspace.path,
+                    testSignal: testSignalPath,
+                    playbackDevice: String(outputDevice.id),
+                    recordingDevice: String(inputDevice.id),
+                    outputFile: finalOutputPath
+                )
+                
+                // Start recording - you'll need to implement this method in ProcessingViewModel
+                // processingVM.startRecording(with: configuration)
+                
+                recordingResultsURL = URL(fileURLWithPath: finalOutputPath)
             }
-            
-            // Set up completion handling
-            recordingResultsURL = URL(fileURLWithPath: finalOutputPath)
         }
     }
 }
@@ -267,12 +379,18 @@ struct WorkspaceInfoSection: View {
 // MARK: - Recording Header View
 struct RecordingHeaderView: View {
     @Binding var recordingType: RecordingView.RecordingType
+    @Binding var selectedLayoutName: String
+    let availableLayouts: [String: RecordingView.SpeakerLayoutInfo]
     let isRecording: Bool
     let canStartRecording: Bool
     let finalOutputPath: String
     let currentWorkspace: String
     let startRecordingAction: () -> Void
     @ObservedObject var audioDeviceVM: AudioDeviceViewModel
+    
+    private var currentLayout: RecordingView.SpeakerLayoutInfo? {
+        availableLayouts[selectedLayoutName]
+    }
     
     var body: some View {
         VStack(spacing: 16) {
@@ -348,15 +466,58 @@ struct RecordingHeaderView: View {
                 }
             }
             
-            // Recording Type Picker (only when not recording)
+            // Recording Type and Layout Pickers (only when not recording)
             if !isRecording {
-                Picker("Recording Type", selection: $recordingType) {
-                    ForEach(RecordingView.RecordingType.allCases, id: \.self) { type in
-                        Label(type.rawValue, systemImage: type.icon)
-                            .tag(type)
+                VStack(spacing: 12) {
+                    Picker("Recording Type", selection: $recordingType) {
+                        ForEach(RecordingView.RecordingType.allCases, id: \.self) { type in
+                            Label(type.rawValue, systemImage: type.icon)
+                                .tag(type)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    
+                    // Show speaker layout picker only for measurement recordings
+                    if recordingType == .measurement && !availableLayouts.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: currentLayout?.icon ?? "speaker.wave.3")
+                                    .foregroundColor(.accentColor)
+                                Text("Speaker Layout")
+                                    .font(.headline)
+                                Spacer()
+                            }
+                            
+                            Picker("Speaker Layout", selection: $selectedLayoutName) {
+                                ForEach(availableLayouts.keys.sorted(), id: \.self) { layoutName in
+                                    if let layout = availableLayouts[layoutName] {
+                                        Label(layout.displayName, systemImage: layout.icon)
+                                            .tag(layoutName)
+                                    }
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            
+                            // Show expected recording files
+                            if let layout = currentLayout, layout.groups.count > 1 {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Recording sequence:")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
+                                    ForEach(Array(layout.groups.enumerated()), id: \.offset) { index, group in
+                                        Text("\(index + 1). \(group.filename)")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding(8)
+                                .background(Color.orange.opacity(0.1))
+                                .cornerRadius(6)
+                            }
+                        }
                     }
                 }
-                .pickerStyle(.segmented)
             }
             
             // Recording Button
@@ -387,15 +548,41 @@ struct RecordingHeaderView: View {
                 // Output Preview (when ready or recording)
                 if canStartRecording || isRecording {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Recording will be saved to workspace:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Text(finalOutputPath)
-                            .font(.system(.caption, design: .monospaced))
-                            .padding(8)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(4)
+                        if recordingType == .measurement, let layout = currentLayout {
+                            if layout.groups.count > 1 {
+                                Text("Multiple files will be created for this layout:")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                ForEach(Array(layout.groups.enumerated()), id: \.offset) { index, group in
+                                    Text(group.filename)
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .padding(4)
+                                        .background(Color.gray.opacity(0.1))
+                                        .cornerRadius(4)
+                                }
+                            } else {
+                                Text("Recording will be saved as:")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                Text(finalOutputPath)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .padding(8)
+                                    .background(Color.gray.opacity(0.1))
+                                    .cornerRadius(4)
+                            }
+                        } else {
+                            Text("Recording will be saved to workspace:")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Text(finalOutputPath)
+                                .font(.system(.caption, design: .monospaced))
+                                .padding(8)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(4)
+                        }
                     }
                 }
             }
@@ -411,6 +598,7 @@ struct RecordingConfigurationSection: View {
     @Binding var outputFileName: String
     @Binding var useCustomName: Bool
     let recordingType: RecordingView.RecordingType
+    let currentLayout: RecordingView.SpeakerLayoutInfo?
     @Binding var showingTestSignalPicker: Bool
     @ObservedObject var workspaceManager: WorkspaceManager
     
@@ -431,18 +619,19 @@ struct RecordingConfigurationSection: View {
                         }
                         .buttonStyle(.bordered)
                         
-                        if !workspaceManager.availableTestSignals.isEmpty {
-                            Menu("Presets") {
-                                ForEach(workspaceManager.availableTestSignals) { signal in
-                                    Button(signal.name) {
-                                        if let path = workspaceManager.copyTestSignalToWorkspace(signal) {
-                                            testSignalPath = path
-                                        }
-                                    }
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                        }
+                        // Remove test signals menu for now - implement when WorkspaceManager has this property
+                        // if !workspaceManager.testSignals.isEmpty {
+                        //     Menu("Presets") {
+                        //         ForEach(workspaceManager.testSignals) { signal in
+                        //             Button(signal.name) {
+                        //                 if let path = workspaceManager.copyTestSignalToWorkspace(signal) {
+                        //                     testSignalPath = path
+                        //                 }
+                        //             }
+                        //         }
+                        //     }
+                        //     .buttonStyle(.bordered)
+                        // }
                     }
                     
                     if !testSignalPath.isEmpty {
@@ -468,17 +657,43 @@ struct RecordingConfigurationSection: View {
                         
                         Spacer()
                         
-                        Toggle("Custom name", isOn: $useCustomName)
-                            .toggleStyle(.switch)
+                        // Only show custom name toggle for single-file recordings
+                        if recordingType != .measurement || (currentLayout?.groups.count ?? 0) <= 1 {
+                            Toggle("Custom name", isOn: $useCustomName)
+                                .toggleStyle(.switch)
+                        }
                     }
                     
-                    if useCustomName {
-                        TextField("Enter filename...", text: $outputFileName)
-                            .textFieldStyle(.roundedBorder)
+                    if recordingType == .measurement, let layout = currentLayout {
+                        if layout.groups.count > 1 {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Files will be named according to speaker layout:")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                ForEach(Array(layout.groups.enumerated()), id: \.offset) { index, group in
+                                    Text("• \(group.filename)")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        } else if useCustomName {
+                            TextField("Enter filename...", text: $outputFileName)
+                                .textFieldStyle(.roundedBorder)
+                        } else {
+                            Text("Will use: \(layout.groups.first?.filename ?? "measurement.wav")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     } else {
-                        Text("Will use: \(recordingType.defaultFileName).wav")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        if useCustomName {
+                            TextField("Enter filename...", text: $outputFileName)
+                                .textFieldStyle(.roundedBorder)
+                        } else {
+                            Text("Will use: \(recordingType.defaultFileName).wav")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }

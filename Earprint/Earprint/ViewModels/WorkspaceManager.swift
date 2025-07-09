@@ -87,7 +87,7 @@ class WorkspaceManager: ObservableObject {
     // MARK: - Test Signal Management
     
     /// Get available test signals from Scripts/data directory
-    private func loadAvailableTestSignals() {
+    func loadAvailableTestSignals() {
         guard let dataURL = bundledDataURL,
               FileManager.default.fileExists(atPath: dataURL.path) else {
             availableTestSignals = []

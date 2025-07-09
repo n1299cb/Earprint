@@ -3,25 +3,7 @@ import SwiftUI
 import Foundation
 
 // MARK: - Recording Models
-struct RecordingConfiguration {
-    let measurementDir: String
-    let testSignal: String
-    let playbackDevice: String
-    let recordingDevice: String
-    let outputFile: String
-    let speakerLayout: String?
-    let recordingGroup: String?
-    
-    init(measurementDir: String, testSignal: String, playbackDevice: String, recordingDevice: String, outputFile: String, speakerLayout: String? = nil, recordingGroup: String? = nil) {
-        self.measurementDir = measurementDir
-        self.testSignal = testSignal
-        self.playbackDevice = playbackDevice
-        self.recordingDevice = recordingDevice
-        self.outputFile = outputFile
-        self.speakerLayout = speakerLayout
-        self.recordingGroup = recordingGroup
-    }
-}
+// Note: RecordingConfiguration is defined elsewhere in the project
 
 struct RecordingInfo: Identifiable, Equatable {
     let id = UUID()
@@ -234,68 +216,261 @@ final class RecordingViewModel: ObservableObject {
     
     // MARK: - Speaker Layout Methods
     func getSpeakerLayouts(completion: @escaping ([String: SpeakerLayoutInfo]) -> Void) {
-        // This method should call the Python backend to get available speaker layouts
-        // For now, provide a fallback implementation that would be replaced with actual Python integration
+        print("🔍 Loading speaker layouts from Python...")
         
-        // Simulated call to Python backend
-        // In reality, this would call something like:
-        // pythonBridge.getSpeakerLayouts { layoutsData in ... }
-        
-        DispatchQueue.global(qos: .background).async {
-            // Simulate network/Python call delay
-            Thread.sleep(forTimeInterval: 0.1)
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let scriptsRoot = Bundle.main.resourceURL?.appendingPathComponent("Scripts") else {
+                print("❌ Scripts directory not found for speaker layouts")
+                // Fallback to basic layouts
+                DispatchQueue.main.async {
+                    let fallbackLayouts = RecordingViewModel.createFallbackLayouts()
+                    completion(fallbackLayouts)
+                }
+                return
+            }
             
-            // This data should come from Python constants.py
-            let simulatedLayouts: [String: SpeakerLayoutInfo] = [
-                "2.0": SpeakerLayoutInfo(
-                    name: "2.0",
-                    displayName: "Stereo (2.0)",
-                    groups: [RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"])],
-                    icon: "speaker.2"
-                ),
-                "5.1": SpeakerLayoutInfo(
-                    name: "5.1",
-                    displayName: "5.1 Surround",
-                    groups: [
-                        RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"]),
-                        RecordingGroup(name: "FC", speakers: ["FC"]),
-                        RecordingGroup(name: "BL,BR", speakers: ["BL", "BR"])
-                    ],
-                    icon: "speaker.wave.3"
-                ),
-                "7.1": SpeakerLayoutInfo(
-                    name: "7.1",
-                    displayName: "7.1 Surround",
-                    groups: [
-                        RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"]),
-                        RecordingGroup(name: "FC", speakers: ["FC"]),
-                        RecordingGroup(name: "SL,SR", speakers: ["SL", "SR"]),
-                        RecordingGroup(name: "BL,BR", speakers: ["BL", "BR"])
-                    ],
-                    icon: "speaker.wave.3"
-                ),
-                "7.1.4": SpeakerLayoutInfo(
-                    name: "7.1.4",
-                    displayName: "7.1.4 Atmos",
-                    groups: [
-                        RecordingGroup(name: "FL,FC,FR,SL,SR,BL,BR,TFL,TFR,TBL,TBR", speakers: ["FL", "FC", "FR", "SL", "SR", "BL", "BR", "TFL", "TFR", "TBL", "TBR"])
-                    ],
-                    icon: "airpodspro"
-                ),
-                "9.1.6": SpeakerLayoutInfo(
-                    name: "9.1.6",
-                    displayName: "9.1.6 Atmos",
-                    groups: [
-                        RecordingGroup(name: "FL,FC,FR,SL,SR,BL,BR,WL,WR,TFL,TFR,TSL,TSR,TBL,TBR", speakers: ["FL", "FC", "FR", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR", "TSL", "TSR", "TBL", "TBR"])
-                    ],
-                    icon: "airpodspro"
-                )
-            ]
+            let process = Process()
+            process.currentDirectoryURL = scriptsRoot
             
-            DispatchQueue.main.async {
-                completion(simulatedLayouts)
+            if let embeddedPythonURL = Bundle.main.resourceURL?.appendingPathComponent("EmbeddedPython/Python.framework/Versions/3.9/bin/python3"),
+               FileManager.default.fileExists(atPath: embeddedPythonURL.path) {
+                // Use embedded Python
+                process.executableURL = embeddedPythonURL
+                process.arguments = [
+                    "-c",
+                    """
+                    import json, constants, sys
+                    
+                    def format_display_name(name):
+                        if name == '2.0':
+                            return 'Stereo (2.0)'
+                        elif name == '5.1':
+                            return '5.1 Surround'
+                        elif name == '7.1':
+                            return '7.1 Surround'
+                        elif name.endswith('.4'):
+                            return f'{name} Atmos'
+                        elif name.endswith('.6'):
+                            return f'{name} Atmos'
+                        elif name.endswith('.2'):
+                            return f'{name} Atmos'
+                        elif name == 'ambisonics':
+                            return 'Ambisonics'
+                        elif name == '1.0':
+                            return 'Mono (1.0)'
+                        else:
+                            return name
+                    
+                    def get_icon_for_layout(name):
+                        if 'ambisonics' in name:
+                            return 'globe'
+                        elif '.4' in name or '.6' in name or '.2' in name:
+                            return 'speaker.wave.1.arrowtriangles.up.right.down.left'
+                        elif name == '1.0':
+                            return 'speaker'
+                        elif name == '2.0':
+                            return 'speaker.2'
+                        else:
+                            return 'hifispeaker.2'
+                    
+                    layouts = {}
+                    for name, groups in constants.SPEAKER_LAYOUTS.items():
+                        layouts[name] = {
+                            'name': name,
+                            'displayName': format_display_name(name),
+                            'groups': [{'name': ','.join(group), 'speakers': group} for group in groups],
+                            'icon': get_icon_for_layout(name)
+                        }
+                    
+                    print(f"Found {len(layouts)} layouts: {list(layouts.keys())}", file=sys.stderr)
+                    json.dump(layouts, sys.stdout)
+                    """
+                ]
+                process.environment = [
+                    "PYTHONHOME": embeddedPythonURL.deletingLastPathComponent().deletingLastPathComponent().path,
+                    "PYTHONPATH": scriptsRoot.path
+                ]
+                print("🔍 Using embedded Python for speaker layouts")
+            } else {
+                // Fallback to system Python with simpler approach
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                process.arguments = [
+                    "python3",
+                    "-c",
+                    """
+                    import json, constants, sys
+                    
+                    print(f"Available layouts: {list(constants.SPEAKER_LAYOUTS.keys())}", file=sys.stderr)
+                    
+                    def format_display_name(name):
+                        if name == '2.0':
+                            return 'Stereo (2.0)'
+                        elif name == '5.1':
+                            return '5.1 Surround'
+                        elif name == '7.1':
+                            return '7.1 Surround'
+                        elif name.endswith('.4'):
+                            return f'{name} Atmos'
+                        elif name.endswith('.6'):
+                            return f'{name} Atmos'
+                        elif name.endswith('.2'):
+                            return f'{name} Atmos'
+                        elif name == 'ambisonics':
+                            return 'Ambisonics'
+                        elif name == '1.0':
+                            return 'Mono (1.0)'
+                        else:
+                            return name
+                    
+                    def get_icon_for_layout(name):
+                        if 'ambisonics' in name:
+                            return 'globe'
+                        elif '.4' in name or '.6' in name or '.2' in name:
+                            return 'airpodspro'
+                        elif name == '1.0':
+                            return 'speaker'
+                        elif name == '2.0':
+                            return 'speaker.2'
+                        else:
+                            return 'speaker.wave.3'
+                    
+                    layouts = {}
+                    for name, groups in constants.SPEAKER_LAYOUTS.items():
+                        layouts[name] = {
+                            'name': name,
+                            'displayName': format_display_name(name),
+                            'groups': [{'name': ','.join(group), 'speakers': group} for group in groups],
+                            'icon': get_icon_for_layout(name)
+                        }
+                    
+                    print(f"Processed {len(layouts)} layouts", file=sys.stderr)
+                    json.dump(layouts, sys.stdout)
+                    """
+                ]
+                print("🔍 Using system Python for speaker layouts")
+            }
+            
+            let pipe = Pipe()
+            let errorPipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = errorPipe
+            
+            do {
+                try process.run()
+                process.waitUntilExit()
+                
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                
+                if !errorData.isEmpty, let errorString = String(data: errorData, encoding: .utf8) {
+                    print("⚠️ Python stderr for layouts: \(errorString)")
+                }
+                
+                // Debug: Print raw data
+                if let dataString = String(data: data, encoding: .utf8) {
+                    print("📋 Raw Python output: \(dataString.prefix(500))...")
+                }
+                
+                if let layoutsDict = try? JSONSerialization.jsonObject(with: data) as? [String: [String: Any]] {
+                    let convertedLayouts = RecordingViewModel.convertPythonLayoutsToSwift(layoutsDict)
+                    DispatchQueue.main.async {
+                        print("✅ Loaded \(convertedLayouts.count) speaker layouts from Python")
+                        completion(convertedLayouts)
+                    }
+                } else {
+                    print("❌ Failed to parse speaker layouts from Python")
+                    if let dataString = String(data: data, encoding: .utf8) {
+                        print("Python output: \(dataString)")
+                    }
+                    // Fallback to basic layouts
+                    DispatchQueue.main.async {
+                        let fallbackLayouts = RecordingViewModel.createFallbackLayouts()
+                        completion(fallbackLayouts)
+                    }
+                }
+                
+            } catch {
+                print("❌ Failed to execute Python process for layouts: \(error)")
+                // Fallback to basic layouts
+                DispatchQueue.main.async {
+                    let fallbackLayouts = RecordingViewModel.createFallbackLayouts()
+                    completion(fallbackLayouts)
+                }
             }
         }
+    }
+    
+    private nonisolated static func convertPythonLayoutsToSwift(_ pythonLayouts: [String: [String: Any]]) -> [String: SpeakerLayoutInfo] {
+        var swiftLayouts: [String: SpeakerLayoutInfo] = [:]
+        
+        for (key, layoutData) in pythonLayouts {
+            guard let name = layoutData["name"] as? String,
+                  let displayName = layoutData["displayName"] as? String,
+                  let icon = layoutData["icon"] as? String,
+                  let groupsData = layoutData["groups"] as? [[String: Any]] else {
+                continue
+            }
+            
+            let groups = groupsData.compactMap { groupData -> RecordingGroup? in
+                guard let groupName = groupData["name"] as? String,
+                      let speakers = groupData["speakers"] as? [String] else {
+                    return nil
+                }
+                return RecordingGroup(name: groupName, speakers: speakers)
+            }
+            
+            let layoutInfo = SpeakerLayoutInfo(
+                name: name,
+                displayName: displayName,
+                groups: groups,
+                icon: icon
+            )
+            
+            swiftLayouts[key] = layoutInfo
+        }
+        
+        return swiftLayouts
+    }
+    
+    private nonisolated static func createFallbackLayouts() -> [String: SpeakerLayoutInfo] {
+        print("✅ Using fallback speaker layouts")
+        return [
+            "2.0": SpeakerLayoutInfo(
+                name: "2.0",
+                displayName: "Stereo (2.0)",
+                groups: [RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"])],
+                icon: "speaker.2"
+            ),
+            "5.1": SpeakerLayoutInfo(
+                name: "5.1",
+                displayName: "5.1 Surround",
+                groups: [
+                    RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"]),
+                    RecordingGroup(name: "FC", speakers: ["FC"]),
+                    RecordingGroup(name: "BL,BR", speakers: ["BL", "BR"])
+                ],
+                icon: "speaker.wave.3"
+            ),
+            "7.1": SpeakerLayoutInfo(
+                name: "7.1",
+                displayName: "7.1 Surround",
+                groups: [
+                    RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"]),
+                    RecordingGroup(name: "FC", speakers: ["FC"]),
+                    RecordingGroup(name: "SL,SR", speakers: ["SL", "SR"]),
+                    RecordingGroup(name: "BL,BR", speakers: ["BL", "BR"])
+                ],
+                icon: "speaker.wave.3"
+            ),
+            "7.1.4": SpeakerLayoutInfo(
+                name: "7.1.4",
+                displayName: "7.1.4 Atmos",
+                groups: [
+                    RecordingGroup(name: "FL,FC,FR,SL,SR,BL,BR,TFL,TFR,TBL,TBR", speakers: ["FL", "FC", "FR", "SL", "SR", "BL", "BR", "TFL", "TFR", "TBL", "TBR"])
+                ],
+                icon: "airpodspro"
+            )
+        ]
     }
     
     // MARK: - Legacy Support Methods
@@ -559,15 +734,7 @@ final class RecordingViewModel: ObservableObject {
 
 #else
 // Non-macOS stub implementation
-struct RecordingConfiguration {
-    let measurementDir: String
-    let testSignal: String
-    let playbackDevice: String
-    let recordingDevice: String
-    let outputFile: String
-    let speakerLayout: String?
-    let recordingGroup: String?
-}
+// Note: RecordingConfiguration is defined elsewhere in the project
 
 struct RecordingInfo: Identifiable, Equatable {
     let id = UUID()
