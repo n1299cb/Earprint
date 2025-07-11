@@ -38,6 +38,11 @@ struct ProcessingConfiguration {
     let roomTarget: String
     let micCalibration: String
     let interactiveDelays: Bool
+    
+    // NEW: Missing properties that were referenced in buildProcessingArgs
+    let outputSampleRate: String?
+    let generatePlots: Bool
+    let exportCSV: Bool
 }
 
 /// Configuration for recording operations

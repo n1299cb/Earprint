@@ -721,17 +721,14 @@ struct PostProcessingView: View {
             roomCorrection: enableRoomCorrection,
             roomTarget: roomTarget,
             micCalibration: micCalibration,
-            interactiveDelays: interactiveDelays
+            interactiveDelays: interactiveDelays,
+            // NEW: Add the missing properties
+            outputSampleRate: outputSampleRate.isEmpty ? nil : outputSampleRate,
+            generatePlots: generatePlots,
+            exportCSV: exportCSV
         )
         
         processingVM.run(configuration: configuration)
-        
-        // If CSV export is enabled, run the export script after processing
-        if exportCSV {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                exportFrequencyResponseData()
-            }
-        }
     }
     
     private func exportFrequencyResponseData() {

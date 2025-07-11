@@ -120,10 +120,46 @@ final class RecordingViewModel: ObservableObject {
     // MARK: - Recording Operations
     func startRecording(with configuration: RecordingConfiguration) {
         guard !isRecording else { return }
-        
+            
+        // Validate configuration first
+        if let error = validateRecordingConfiguration(configuration) {
+            recordingState = .error(error)
+            return
+        }
+            
         recordingState = .recording(progress: nil, remainingTime: nil)
-        let args = buildRecordingArgs(configuration)
-        startPython(script: scriptPath("recorder.py"), args: args)
+            
+        // Choose the right Python tool based on recording complexity
+        if let layout = configuration.speakerLayout, shouldUseCaptureWizard(layout) {
+            // Complex layout recording -> use capture_wizard.py
+            let args = buildCaptureWizardArgs(configuration)
+            startPython(script: scriptPath("capture_wizard.py"), args: args)
+        } else {
+            // Simple recording -> use recorder.py
+            let args = buildRecordingArgs(configuration)
+            startPython(script: scriptPath("recorder.py"), args: args)
+        }
+    }
+    
+    private func shouldUseCaptureWizard(_ layoutName: String) -> Bool {
+        // Use capture_wizard for multi-group layouts
+        return !["2.0", "1.0", "headphone", "room"].contains(layoutName)
+    }
+
+    private func buildCaptureWizardArgs(_ configuration: RecordingConfiguration) -> [String] {
+        let baseArgs = [
+            "--layout", configuration.speakerLayout ?? "2.0",
+            "--dir", configuration.measurementDir,
+            "--input_device", configuration.recordingDevice,
+            "--output_device", configuration.playbackDevice
+        ]
+        
+        // Add custom test signals if specified and not default
+        if !configuration.testSignal.contains("sweep-6.15s-48000Hz") {
+            return baseArgs + ["--stereo_sweep", configuration.testSignal]
+        }
+        
+        return baseArgs
     }
 
     func stopRecording() {
@@ -131,43 +167,28 @@ final class RecordingViewModel: ObservableObject {
     }
 
     private func buildRecordingArgs(_ configuration: RecordingConfiguration) -> [String] {
-        var args = [
-            "--measurement_dir", configuration.measurementDir,
-            "--test_signal", configuration.testSignal,
-            "--playback_device", configuration.playbackDevice,
-            "--recording_device", configuration.recordingDevice
-        ]
-        
-        // Add output file if specified
-        if let outputFile = configuration.outputFile {
-            args.append("--output_file")
-            args.append(outputFile)
-        }
-        
-        // Add speaker layout if specified
-        if let speakerLayout = configuration.speakerLayout {
-            args.append("--layout")
-            args.append(speakerLayout)
-        }
-        
-        // Add recording group if specified
-        if let recordingGroup = configuration.recordingGroup {
-            args.append("--group")
-            args.append(recordingGroup)
-        }
-        
-        // Add output and input channels if specified
-        if let outputChannels = configuration.outputChannels {
-            args.append("--output_channels")
-            args.append(outputChannels.map(String.init).joined(separator: ","))
-        }
-        
-        if let inputChannels = configuration.inputChannels {
-            args.append("--input_channels")
-            args.append(inputChannels.map(String.init).joined(separator: ","))
-        }
-        
-        return args
+            // Determine if this is a room recording
+            let isRoomRecording = configuration.outputFile?.lowercased().contains("room") ?? false
+            
+            // Determine proper channel count
+            let channels: Int
+            if isRoomRecording {
+                channels = 1  // Room recordings must be mono
+            } else {
+                channels = configuration.outputChannels?.count ?? 2  // Default to stereo for measurements
+            }
+            
+            // Build args with CORRECT CLI arguments that match the Python backend
+            let args = [
+                "--play", configuration.testSignal,
+                "--record", configuration.outputFile ?? "\(configuration.measurementDir)/recording.wav",
+                "--output_device", configuration.playbackDevice,
+                "--input_device", configuration.recordingDevice,
+                "--channels", String(channels),
+                "--print_progress"
+            ]
+            
+            return args
     }
 
     private func cancelRecording() {
@@ -230,7 +251,20 @@ final class RecordingViewModel: ObservableObject {
     }
 
     private func parseRecordingProgressFromOutput(_ output: String) {
-        // Parse progress indicators from Python recorder output
+        // Parse progress from recorder.py (PROGRESS 0.750 15.2 format)
+        if let progressMatch = output.range(of: #"PROGRESS (\d+\.?\d*) (\d+\.?\d*)"#, options: .regularExpression) {
+            let progressStr = String(output[progressMatch])
+            let components = progressStr.replacingOccurrences(of: "PROGRESS ", with: "").split(separator: " ")
+            
+            if components.count == 2,
+                let progress = Double(components[0]),
+                let remaining = Double(components[1]) {
+                recordingState = .recording(progress: progress, remainingTime: remaining)
+                return
+            }
+        }
+            
+        // Parse progress from recorder.py (percentage format)
         if let progressMatch = output.range(of: #"(\d+\.?\d*)%"#, options: .regularExpression) {
             let progressStr = String(output[progressMatch])
             if let progressValue = Double(progressStr.replacingOccurrences(of: "%", with: "")) {
@@ -238,7 +272,21 @@ final class RecordingViewModel: ObservableObject {
                 if case .recording(_, let time) = recordingState {
                     recordingState = .recording(progress: normalizedProgress, remainingTime: time)
                 }
+                return
             }
+        }
+            
+        // Parse capture_wizard.py status messages
+        if output.contains("Recording layout") {
+            recordingState = .recording(progress: 0.0, remainingTime: nil)
+        } else if output.contains("Insert binaural microphones") {
+            recordingState = .recording(progress: 0.1, remainingTime: nil)
+        } else if output.contains("Position for") {
+            recordingState = .recording(progress: 0.3, remainingTime: nil)
+        } else if output.contains("✅ Capture completed") {
+            recordingState = .completed(outputFile: "Capture completed")
+        } else if output.contains("⚠️  Recording failed") {
+            recordingState = .error("Recording failed")
         }
     }
 
@@ -276,38 +324,38 @@ final class RecordingViewModel: ObservableObject {
     func recordHeadphoneEQ(configuration: RecordingConfiguration) {
         let file = URL(fileURLWithPath: configuration.measurementDir)
             .appendingPathComponent("headphones.wav").path
-        
+            
         let updatedConfig = RecordingConfiguration(
             measurementDir: configuration.measurementDir,
             testSignal: configuration.testSignal,
             playbackDevice: configuration.playbackDevice,
             recordingDevice: configuration.recordingDevice,
             outputFile: file,
-            speakerLayout: configuration.speakerLayout,
-            recordingGroup: configuration.recordingGroup,
-            outputChannels: configuration.outputChannels,
-            inputChannels: configuration.inputChannels
+            speakerLayout: nil,
+            recordingGroup: nil,
+            outputChannels: [0, 1],  // Headphones are always stereo
+            inputChannels: [0, 1]    // Binaural mics are always stereo
         )
-        
-        startRecording(with: updatedConfig)
+            
+            startRecording(with: updatedConfig)
     }
 
     func recordRoomResponse(configuration: RecordingConfiguration) {
         let file = URL(fileURLWithPath: configuration.measurementDir)
             .appendingPathComponent("room.wav").path
-        
+            
         let updatedConfig = RecordingConfiguration(
             measurementDir: configuration.measurementDir,
             testSignal: configuration.testSignal,
             playbackDevice: configuration.playbackDevice,
             recordingDevice: configuration.recordingDevice,
             outputFile: file,
-            speakerLayout: configuration.speakerLayout,
-            recordingGroup: configuration.recordingGroup,
-            outputChannels: configuration.outputChannels,
-            inputChannels: configuration.inputChannels
+            speakerLayout: nil,  // Not needed for room recording
+            recordingGroup: nil, // Not needed for room recording
+            outputChannels: nil, // Room recordings don't use output channels array
+            inputChannels: [0]   // Room recordings use single input channel (mono)
         )
-        
+            
         startRecording(with: updatedConfig)
     }
 
@@ -552,20 +600,27 @@ final class RecordingViewModel: ObservableObject {
     ) {
         guard !isRecording else { return }
         
+        // Validate that we have required test signals
+        let missingSignals = validateTestSignalsForLayout(layout)
+        if !missingSignals.isEmpty {
+            recordingState = .error("Missing test signals for groups: \(missingSignals.joined(separator: ", "))")
+            return
+        }
+            
         // Determine which group to record (first group if not specified)
         let targetGroup = group ?? layout.groups.first
         guard let recordingGroup = targetGroup else {
             recordingState = .error("No recording groups found in layout")
             return
         }
-        
+            
         // Get appropriate test signal for this group
         let selectedTestSignal = getTestSignalForGroup(recordingGroup)
         guard !selectedTestSignal.isEmpty else {
             recordingState = .error("No suitable test signal found for group: \(recordingGroup.name)")
             return
         }
-        
+            
         // Create output file path
         let outputFile = URL(fileURLWithPath: configuration.measurementDir)
             .appendingPathComponent(recordingGroup.filename).path
@@ -582,9 +637,38 @@ final class RecordingViewModel: ObservableObject {
             outputChannels: getOutputChannelsForGroup(recordingGroup),
             inputChannels: configuration.inputChannels
         )
-        
+            
         // Start the recording
         startRecording(with: enhancedConfig)
+    }
+
+    /// Validate configuration before recording
+    private func validateRecordingConfiguration(_ configuration: RecordingConfiguration) -> String? {
+        // Check test signal exists
+        if !fileManager.fileExists(atPath: configuration.testSignal) {
+            return "Test signal file not found: \(configuration.testSignal)"
+        }
+            
+        // Check measurement directory exists or can be created
+        let measurementDir = URL(fileURLWithPath: configuration.measurementDir)
+        if !fileManager.fileExists(atPath: measurementDir.path) {
+            do {
+                try fileManager.createDirectory(at: measurementDir, withIntermediateDirectories: true)
+            } catch {
+                return "Cannot create measurement directory: \(error.localizedDescription)"
+            }
+        }
+            
+        // Check devices are specified
+        if configuration.playbackDevice.isEmpty {
+            return "No playback device specified"
+        }
+        
+        if configuration.recordingDevice.isEmpty {
+            return "No recording device specified"
+        }
+            
+        return nil // All good
     }
 
     /// Get available test signals for diagnostics

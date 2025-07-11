@@ -139,33 +139,126 @@ final class ProcessingViewModel: ObservableObject {
     private func buildProcessingArgs(_ config: ProcessingConfiguration) -> [String] {
         var args = [
             "--dir_path", config.measurementDir,
-            "--test_signal", config.testSignal,
             "--print_progress"
         ]
         
-        if let balance = config.channelBalance { args += ["--channel_balance", balance] }
-        if let level = config.targetLevel { args += ["--target_level", level] }
-        if let device = config.playbackDevice { args += ["--playback_device", device] }
-        if let device = config.recordingDevice { args += ["--recording_device", device] }
-        if let channels = config.outputChannels { args += ["--output_channels", channels.map(String.init).joined(separator: ",")] }
-        if let channels = config.inputChannels { args += ["--input_channels", channels.map(String.init).joined(separator: ",")] }
+        // Test signal - use --test_signal (not --input)
+        // This points to the sweep file (e.g., sweep-6.15s-48000Hz-32bit-2.93Hz-24000Hz.pkl)
+        if !config.testSignal.isEmpty {
+            args += ["--test_signal", config.testSignal]
+        }
         
-        if config.enableCompensation { args.append("--compensation") }
-        if config.headphoneEqEnabled, let file = config.headphoneFile { args += ["--headphone_file", file] }
-        if let type = config.compensationType { args += ["--compensation_type", type] }
-        if config.diffuseField { args.append("--diffuse_field") }
+        // Basic processing parameters
+        if let balance = config.channelBalance, !balance.isEmpty {
+            args += ["--channel_balance", balance]
+        }
+        if let level = config.targetLevel, !level.isEmpty {
+            args += ["--target_level", level]
+        }
+        if let device = config.playbackDevice, !device.isEmpty {
+            args += ["--playback_device", device]
+        }
+        if let device = config.recordingDevice, !device.isEmpty {
+            args += ["--recording_device", device]
+        }
+        if let channels = config.outputChannels, !channels.isEmpty {
+            args += ["--output_channels", channels.map(String.init).joined(separator: ",")]
+        }
+        if let channels = config.inputChannels, !channels.isEmpty {
+            args += ["--input_channels", channels.map(String.init).joined(separator: ",")]
+        }
         
-        args += ["--x_curve_action", config.xCurveAction]
-        if let type = config.xCurveType { args += ["--x_curve_type", type] }
-        if config.xCurveInCapture { args.append("--x_curve_in_capture") }
+        // Compensation settings - Fixed argument mapping
+        if config.enableCompensation {
+            args.append("--compensation")
+            
+            // Headphone compensation file
+            if config.headphoneEqEnabled, let file = config.headphoneFile, !file.isEmpty {
+                args += ["--headphones", file]
+            }
+            
+            // Compensation type - use flag format instead of --compensation_type
+            if let type = config.compensationType, !type.isEmpty {
+                switch type {
+                case "diffuse-field":
+                    args.append("--diffuse_field_compensation")
+                case "custom":
+                    // Custom compensation files are handled via --headphones argument above
+                    break
+                default:
+                    // Handle other compensation types if needed
+                    break
+                }
+            }
+        } else {
+            // Explicitly disable headphone compensation
+            args.append("--no_headphone_compensation")
+        }
         
-        if config.decayEnabled { args += ["--decay_time", config.decayTime] }
-        if config.specificLimitEnabled { args += ["--specific_limit", config.specificLimit] }
-        if config.genericLimitEnabled { args += ["--generic_limit", config.genericLimit] }
-        if config.frCombinationEnabled { args += ["--fr_combination_method", config.frCombinationMethod] }
-        if config.roomCorrection { args += ["--room_target", config.roomTarget] }
-        if !config.micCalibration.isEmpty { args += ["--mic_calibration", config.micCalibration] }
-        if config.interactiveDelays { args.append("--interactive_delays") }
+        // Diffuse field compensation (separate from compensation type)
+        if config.diffuseField {
+            args.append("--diffuse_field_compensation")
+        }
+        
+        // X-Curve settings - Fixed argument mapping
+        switch config.xCurveAction {
+        case "Apply":
+            args.append("--apply_x_curve")
+        case "Remove":
+            args.append("--remove_x_curve")
+        default:
+            // "None" - don't add any x-curve arguments
+            break
+        }
+        
+        if let type = config.xCurveType, !type.isEmpty && config.xCurveAction != "None" {
+            args += ["--x_curve_type", type]
+        }
+        if config.xCurveInCapture {
+            args.append("--x_curve_in_capture")
+        }
+        
+        // Advanced processing parameters
+        if config.decayEnabled, !config.decayTime.isEmpty {
+            args += ["--decay", config.decayTime]
+        }
+        if config.specificLimitEnabled, !config.specificLimit.isEmpty {
+            args += ["--specific_limit", config.specificLimit]
+        }
+        if config.genericLimitEnabled, !config.genericLimit.isEmpty {
+            args += ["--generic_limit", config.genericLimit]
+        }
+        if config.frCombinationEnabled, !config.frCombinationMethod.isEmpty {
+            args += ["--fr_combination_method", config.frCombinationMethod]
+        }
+        
+        // Room correction settings - Fixed argument mapping
+        if config.roomCorrection {
+            if !config.roomTarget.isEmpty {
+                args += ["--room_target", config.roomTarget]
+            }
+            if !config.micCalibration.isEmpty {
+                args += ["--room_mic_calibration", config.micCalibration]
+            }
+        } else {
+            args.append("--no_room_correction")
+        }
+        
+        // Delay settings
+        if config.interactiveDelays {
+            args.append("--interactive_delays")
+        }
+        
+        // Output settings
+        if let sampleRate = config.outputSampleRate, !sampleRate.isEmpty {
+            args += ["--fs", sampleRate]
+        }
+        if config.generatePlots {
+            args.append("--plot")
+        }
+        if config.exportCSV {
+            args.append("--csv")
+        }
         
         return args
     }
