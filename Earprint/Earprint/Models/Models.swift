@@ -50,6 +50,9 @@ struct RecordingConfiguration {
     let speakerLayout: String?
     let recordingGroup: String?
     
+    let outputChannels: [Int]?
+    let inputChannels: [Int]?
+    
     init(
         measurementDir: String,
         testSignal: String,
@@ -57,7 +60,9 @@ struct RecordingConfiguration {
         recordingDevice: String,
         outputFile: String? = nil,
         speakerLayout: String? = nil,
-        recordingGroup: String? = nil
+        recordingGroup: String? = nil,
+        outputChannels: [Int]? = nil,
+        inputChannels: [Int]? = nil
     ) {
         self.measurementDir = measurementDir
         self.testSignal = testSignal
@@ -66,6 +71,8 @@ struct RecordingConfiguration {
         self.outputFile = outputFile
         self.speakerLayout = speakerLayout
         self.recordingGroup = recordingGroup
+        self.outputChannels = outputChannels
+        self.inputChannels = inputChannels
     }
 }
 
@@ -87,6 +94,45 @@ enum ProcessingState: Equatable {
         default:
             return false
         }
+    }
+}
+
+// MARK: - Speaker Layout Support Types (add to Models.swift)
+
+struct SpeakerLayoutInfo {
+    let name: String
+    let displayName: String
+    let groups: [RecordingGroup]
+    let icon: String
+}
+
+struct RecordingGroup {
+    let name: String
+    let speakers: [String]
+    
+    var filename: String {
+        return "\(name).wav"
+    }
+}
+
+// MARK: - File Validation
+struct FileValidationResult {
+    let isValid: Bool
+    let errorMessage: String?
+    let suggestions: [String]
+}
+
+// MARK: - Recording Info
+struct RecordingInfo: Identifiable, Equatable {
+    let id = UUID()
+    let name: String
+    let path: String
+    let dateModified: Date
+    let size: Int64
+    let isDirectory: Bool
+    
+    static func == (lhs: RecordingInfo, rhs: RecordingInfo) -> Bool {
+        lhs.path == rhs.path
     }
 }
 

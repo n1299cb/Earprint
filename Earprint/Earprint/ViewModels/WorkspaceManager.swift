@@ -62,8 +62,8 @@ class WorkspaceManager: ObservableObject {
         // Create the workspaces directory path (can't use computed property yet)
         let workspacesDirectoryURL = appSupportURL.appendingPathComponent("Workspaces")
         
-        // Create default workspace path
-        let defaultName = "Current Session"
+        // Create default workspace path with date-based name
+        let defaultName = "Workspace \(Date().formatted(.dateTime.month(.abbreviated).day().hour().minute()))"
         let defaultWorkspaceURL = workspacesDirectoryURL.appendingPathComponent(defaultName)
         
         // Initialize remaining stored properties
@@ -82,6 +82,42 @@ class WorkspaceManager: ObservableObject {
         // Load workspaces and test signals after everything is set up
         loadAvailableWorkspaces()
         loadAvailableTestSignals()
+    }
+    
+    // MARK: - Workspace Operations
+    
+    /// Clear all files in the current workspace
+    func clearCurrentWorkspace() throws {
+        let contents = try FileManager.default.contentsOfDirectory(at: currentWorkspace, includingPropertiesForKeys: nil)
+        for item in contents {
+            try FileManager.default.removeItem(at: item)
+        }
+        
+        // Also clear subdirectories like plots
+        if FileManager.default.fileExists(atPath: plotsDirectory.path) {
+            try FileManager.default.removeItem(at: plotsDirectory)
+        }
+        
+        // Recreate the plots directory
+        try FileManager.default.createDirectory(at: plotsDirectory, withIntermediateDirectories: true)
+        
+        // Trigger UI refresh
+        refreshWorkspaceStats()
+    }
+    
+    /// Generate test data in the plots directory
+    func generateTestData() {
+        let testDataGenerator = TestDataGenerator()
+        testDataGenerator.generateAllTestFiles(in: plotsDirectory)
+        
+        // Trigger UI refresh
+        refreshWorkspaceStats()
+    }
+    
+    /// Force refresh of workspace statistics and UI
+    func refreshWorkspaceStats() {
+        // Trigger SwiftUI to recalculate any views that depend on workspace stats
+        objectWillChange.send()
     }
     
     // MARK: - Test Signal Management
@@ -141,6 +177,12 @@ class WorkspaceManager: ObservableObject {
         let destinationURL = currentWorkspace.appendingPathComponent("test.\(testSignalInfo.type.rawValue)")
         
         do {
+            // Check if source file actually exists first
+            guard FileManager.default.fileExists(atPath: testSignalInfo.url.path) else {
+                print("Test signal source file does not exist: \(testSignalInfo.url.path)")
+                return nil
+            }
+            
             // Remove existing test signal if present
             if FileManager.default.fileExists(atPath: destinationURL.path) {
                 try FileManager.default.removeItem(at: destinationURL)
@@ -174,7 +216,7 @@ class WorkspaceManager: ObservableObject {
     
     /// Create a new workspace with optional name
     func createNewWorkspace(name: String? = nil) {
-        let workspaceName = name ?? "Workspace \(Date().formatted(.dateTime.month().day().hour().minute()))"
+        let workspaceName = name ?? "Workspace \(Date().formatted(.dateTime.month(.abbreviated).day().hour().minute()))"
         let sanitizedName = sanitizeFilename(workspaceName)
         let newWorkspaceURL = workspacesDirectory.appendingPathComponent(sanitizedName)
         
@@ -185,16 +227,16 @@ class WorkspaceManager: ObservableObject {
             try FileManager.default.createDirectory(at: newWorkspaceURL.appendingPathComponent("plots"),
                                                   withIntermediateDirectories: true)
             
-            // Copy default test signal to new workspace
-            if let defaultSignal = availableTestSignals.first(where: { $0.isDefault }) ?? availableTestSignals.first {
-                _ = copyTestSignalToWorkspace(defaultSignal)
-            }
-            
             // Switch to new workspace
             currentWorkspace = newWorkspaceURL
             self.workspaceName = sanitizedName
             
             loadAvailableWorkspaces()
+            
+            print("Created new workspace: \(sanitizedName)")
+            
+            // Note: Test signals will be handled by Python backend when needed
+            // No need to copy test signals during workspace creation
             
         } catch {
             print("Failed to create workspace: \(error)")
@@ -203,20 +245,30 @@ class WorkspaceManager: ObservableObject {
     
     /// Switch to an existing workspace
     func switchToWorkspace(_ workspaceInfo: WorkspaceInfo) {
+        // Only switch if it's actually different
+        guard workspaceInfo.url != currentWorkspace else { return }
+        
         currentWorkspace = workspaceInfo.url
         workspaceName = workspaceInfo.name
+        
+        print("Switched to workspace: \(workspaceInfo.name)")
+        
+        // Trigger UI refresh only once at the end
+        objectWillChange.send()
     }
     
     /// Delete a workspace
     func deleteWorkspace(_ workspaceInfo: WorkspaceInfo) {
-        guard workspaceInfo.url != currentWorkspace else {
-            print("Cannot delete current workspace")
-            return
-        }
-        
         do {
             try FileManager.default.removeItem(at: workspaceInfo.url)
+            print("Deleted workspace: \(workspaceInfo.name)")
+            
+            // Reload available workspaces after deletion
             loadAvailableWorkspaces()
+            
+            // Don't handle switching here - let the UI detect and fix invalid states
+            // This prevents cascading updates during deletion
+            
         } catch {
             print("Failed to delete workspace: \(error)")
         }
@@ -440,14 +492,110 @@ class WorkspaceManager: ObservableObject {
     }
 }
 
+// MARK: - Test Data Generator
+
+class TestDataGenerator {
+    func generateAllTestFiles(in directory: URL) {
+        // Create plots directory if it doesn't exist
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        
+        generateHeadphoneTestData(in: directory)
+        generateHRIRTestData(in: directory)
+        generateRoomCorrectionData(in: directory)
+        generateBeforeAfterData(in: directory)
+    }
+    
+    private func generateHeadphoneTestData(in directory: URL) {
+        let frequencies = stride(from: 20.0, through: 20000.0, by: 20.0).map { $0 }
+        let csvPath = directory.appendingPathComponent("headphones-test.csv")
+        
+        var csvContent = "frequency,left_db,right_db,left_right_diff\n"
+        
+        for freq in frequencies {
+            // Create realistic headphone response
+            let bassRolloff = freq < 100 ? -12 * log10(freq / 100) : 0
+            let presencePeak = 6 * exp(-pow((log10(freq) - log10(3000)) / 0.3, 2))
+            let trebleRolloff = freq > 10000 ? -6 * log10(freq / 10000) : 0
+            let noise = Double.random(in: -0.5...0.5)
+            
+            let leftResponse = bassRolloff + presencePeak + trebleRolloff + noise
+            let rightResponse = leftResponse + Double.random(in: -0.2...0.2)
+            let diff = leftResponse - rightResponse
+            
+            csvContent += "\(freq),\(leftResponse),\(rightResponse),\(diff)\n"
+        }
+        
+        try? csvContent.write(to: csvPath, atomically: true, encoding: .utf8)
+    }
+    
+    private func generateHRIRTestData(in directory: URL) {
+        let frequencies = stride(from: 20.0, through: 20000.0, by: 25.0).map { $0 }
+        let csvPath = directory.appendingPathComponent("hrir-test.csv")
+        
+        var csvContent = "frequency,FL_left,FL_right,FR_left,FR_right\n"
+        
+        for freq in frequencies {
+            let baseResponse = -3 * log10(freq / 1000)
+            
+            let flLeft = baseResponse + 3 * exp(-pow((log10(freq) - log10(100)) / 0.5, 2)) + Double.random(in: -0.3...0.3)
+            let flRight = baseResponse + Double.random(in: -0.3...0.3)
+            let frLeft = baseResponse + Double.random(in: -0.3...0.3)
+            let frRight = baseResponse + 2 * exp(-pow((log10(freq) - log10(5000)) / 0.3, 2)) + Double.random(in: -0.3...0.3)
+            
+            csvContent += "\(freq),\(flLeft),\(flRight),\(frLeft),\(frRight)\n"
+        }
+        
+        try? csvContent.write(to: csvPath, atomically: true, encoding: .utf8)
+    }
+    
+    private func generateRoomCorrectionData(in directory: URL) {
+        let frequencies = stride(from: 20.0, through: 20000.0, by: 30.0).map { $0 }
+        let csvPath = directory.appendingPathComponent("room-correction-test.csv")
+        
+        var csvContent = "frequency,room_measured,target_response,correction_needed\n"
+        
+        for freq in frequencies {
+            let roomResponse = 5 * exp(-pow((log10(freq) - log10(60)) / 0.4, 2)) - 8 * exp(-pow((log10(freq) - log10(15000)) / 0.3, 2))
+            let targetResponse = -1 * log10(freq / 1000)
+            let correction = targetResponse - roomResponse
+            
+            csvContent += "\(freq),\(roomResponse),\(targetResponse),\(correction)\n"
+        }
+        
+        try? csvContent.write(to: csvPath, atomically: true, encoding: .utf8)
+    }
+    
+    private func generateBeforeAfterData(in directory: URL) {
+        let frequencies = stride(from: 20.0, through: 20000.0, by: 35.0).map { $0 }
+        let csvPath = directory.appendingPathComponent("before-after-test.csv")
+        
+        var csvContent = "frequency,before_processing,after_processing,improvement\n"
+        
+        for freq in frequencies {
+            let beforeResponse = -8 * log10(freq / 100) + 8 * exp(-pow((log10(freq) - log10(3000)) / 0.2, 2)) - 15 * exp(-pow((log10(freq) - log10(12000)) / 0.25, 2))
+            let afterResponse = -2 * log10(freq / 1000) + Double.random(in: -0.4...0.4)
+            let improvement = afterResponse - beforeResponse
+            
+            csvContent += "\(freq),\(beforeResponse),\(afterResponse),\(improvement)\n"
+        }
+        
+        try? csvContent.write(to: csvPath, atomically: true, encoding: .utf8)
+    }
+}
+
 // MARK: - Data Models
 
-struct WorkspaceInfo: Identifiable {
+struct WorkspaceInfo: Identifiable, Equatable {
     let id = UUID()
     let name: String
     let url: URL
     let creationDate: Date
     let isCurrent: Bool
+    
+    // Implement Equatable based on URL since that's the unique identifier
+    static func == (lhs: WorkspaceInfo, rhs: WorkspaceInfo) -> Bool {
+        return lhs.url == rhs.url
+    }
 }
 
 struct WorkspaceStats {

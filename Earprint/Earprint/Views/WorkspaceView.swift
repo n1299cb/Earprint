@@ -14,8 +14,79 @@ struct WorkspaceView: View {
     @State private var exportTypes: ExportType = .all
     @State private var isExporting = false
     @State private var exportError: String?
+    @State private var showingTestDataAlert = false
+    @State private var refreshTrigger = UUID()
+    
+    // Remove the hasAnyWorkspaces property since we're handling this in body now
+    
+    private var stats: WorkspaceStats {
+        return workspaceManager.getWorkspaceStats()
+    }
     
     var body: some View {
+        if workspaceManager.availableWorkspaces.isEmpty {
+            // No workspaces available at all - force user to create one
+            noWorkspaceView
+        } else {
+            // Has workspaces available - show normal view
+            workspaceContentView
+                .onAppear {
+                    checkAndFixInvalidWorkspace()
+                }
+                .onChange(of: workspaceManager.availableWorkspaces) { _ in
+                    checkAndFixInvalidWorkspace()
+                }
+        }
+    }
+    
+    // MARK: - Auto-fix Helper
+    
+    private func checkAndFixInvalidWorkspace() {
+        // Check if current workspace path is invalid and auto-fix it
+        if !FileManager.default.fileExists(atPath: workspaceManager.currentWorkspace.path) && !workspaceManager.availableWorkspaces.isEmpty {
+            if let firstValidWorkspace = workspaceManager.availableWorkspaces.first {
+                print("Auto-switching from invalid workspace to: \(firstValidWorkspace.name)")
+                workspaceManager.switchToWorkspace(firstValidWorkspace)
+            }
+        }
+    }
+    
+    // MARK: - No Workspace View
+    
+    private var noWorkspaceView: some View {
+        VStack(spacing: 32) {
+            VStack(spacing: 16) {
+                Image(systemName: "folder.badge.questionmark")
+                    .font(.system(size: 64))
+                    .foregroundColor(.orange)
+                
+                Text("No Workspace Found")
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                Text("You need to create a workspace to continue using Earprint")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            
+            Button("Create New Workspace") {
+                showingNewWorkspaceSheet = true
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("Workspace")
+        .sheet(isPresented: $showingNewWorkspaceSheet) {
+            newWorkspaceSheet
+                .frame(width: 500, height: 400)
+        }
+    }
+    
+    // MARK: - Main Workspace Content
+    
+    private var workspaceContentView: some View {
         VStack(spacing: 20) {
             // Header
             headerSection
@@ -38,9 +109,15 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $showingNewWorkspaceSheet) {
             newWorkspaceSheet
+                .frame(width: 500, height: 400)
         }
         .sheet(isPresented: $showingWorkspaceList) {
             workspaceListSheet
+        }
+        .alert("Test Data Generated", isPresented: $showingTestDataAlert) {
+            Button("OK") { }
+        } message: {
+            Text("Sample CSV files have been created in the plots directory.")
         }
     }
     
@@ -87,7 +164,7 @@ struct WorkspaceView: View {
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
             
-            let stats = workspaceManager.getWorkspaceStats()
+            let currentStats = stats
             
             LazyVGrid(columns: [
                 GridItem(.flexible()),
@@ -96,26 +173,26 @@ struct WorkspaceView: View {
             ], spacing: 12) {
                 StatusCard(
                     title: "Files",
-                    value: "\(stats.fileCount)",
-                    subtitle: "\(stats.formattedSize)",
+                    value: "\(currentStats.fileCount)",
+                    subtitle: "\(currentStats.formattedSize)",
                     icon: "doc.fill",
                     color: .blue
                 )
                 
                 StatusCard(
                     title: "Audio",
-                    value: "\(stats.audioFiles)",
+                    value: "\(currentStats.audioFiles)",
                     subtitle: "recordings",
                     icon: "waveform",
-                    color: stats.hasRecordings ? .green : .gray
+                    color: currentStats.hasRecordings ? .green : .gray
                 )
                 
                 StatusCard(
                     title: "Data",
-                    value: "\(stats.csvFiles)",
+                    value: "\(currentStats.csvFiles)",
                     subtitle: "CSV files",
                     icon: "chart.line.uptrend.xyaxis",
-                    color: stats.hasCSVData ? .orange : .gray
+                    color: currentStats.hasCSVData ? .orange : .gray
                 )
             }
         }
@@ -142,7 +219,7 @@ struct WorkspaceView: View {
                     color: .blue,
                     action: { showingExportSheet = true }
                 )
-                .disabled(!workspaceManager.hasRecordings && !workspaceManager.hasProcessedData)
+                .disabled(!stats.hasRecordings && !stats.hasProcessedData)
                 
                 ActionButton(
                     title: "New Session",
@@ -193,7 +270,10 @@ struct WorkspaceView: View {
                         WorkspaceRow(
                             workspace: workspace,
                             onSwitch: { workspaceManager.switchToWorkspace(workspace) },
-                            onDelete: { workspaceManager.deleteWorkspace(workspace) }
+                            onDelete: { workspaceManager.deleteWorkspace(workspace) },
+                            onRename: workspace.isCurrent ? { newName in
+                                workspaceManager.renameCurrentWorkspace(to: newName)
+                            } : nil
                         )
                     }
                     
@@ -303,46 +383,55 @@ struct WorkspaceView: View {
     // MARK: - New Workspace Sheet
     
     private var newWorkspaceSheet: some View {
-        NavigationView {
-            VStack(spacing: 20) {
+        VStack(spacing: 24) {
+            VStack(spacing: 12) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 40))
+                    .foregroundColor(.green)
+                
                 Text("Create New Workspace")
                     .font(.title2)
                     .fontWeight(.semibold)
                 
-                Text("Start a fresh measurement session")
+                Text("Start a fresh measurement session with a clean workspace")
+                    .font(.body)
                     .foregroundColor(.secondary)
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Workspace Name")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    
-                    TextField("Enter workspace name", text: $newWorkspaceName)
-                        .textFieldStyle(.roundedBorder)
-                }
-                
-                Spacer()
-                
-                HStack {
-                    Button("Cancel") {
-                        showingNewWorkspaceSheet = false
-                        newWorkspaceName = ""
-                    }
-                    .buttonStyle(.bordered)
-                    
-                    Spacer()
-                    
-                    Button("Create") {
-                        workspaceManager.createNewWorkspace(name: newWorkspaceName.isEmpty ? nil : newWorkspaceName)
-                        showingNewWorkspaceSheet = false
-                        newWorkspaceName = ""
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
+                    .multilineTextAlignment(.center)
             }
-            .padding()
-            .navigationTitle("New Workspace")
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Workspace Name")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                TextField("Enter workspace name (optional)", text: $newWorkspaceName)
+                    .textFieldStyle(.roundedBorder)
+                
+                Text("If left empty, a name will be generated automatically.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            HStack(spacing: 12) {
+                Button("Cancel") {
+                    showingNewWorkspaceSheet = false
+                    newWorkspaceName = ""
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity)
+                
+                Button("Create Workspace") {
+                    workspaceManager.createNewWorkspace(name: newWorkspaceName.isEmpty ? nil : newWorkspaceName)
+                    showingNewWorkspaceSheet = false
+                    newWorkspaceName = ""
+                }
+                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+            }
         }
+        .padding(32)
     }
     
     // MARK: - Workspace List Sheet
@@ -357,7 +446,10 @@ struct WorkspaceView: View {
                             workspaceManager.switchToWorkspace(workspace)
                             showingWorkspaceList = false
                         },
-                        onDelete: { workspaceManager.deleteWorkspace(workspace) }
+                        onDelete: { workspaceManager.deleteWorkspace(workspace) },
+                        onRename: workspace.isCurrent ? { newName in
+                            workspaceManager.renameCurrentWorkspace(to: newName)
+                        } : nil
                     )
                 }
             }
@@ -412,27 +504,31 @@ struct WorkspaceView: View {
     }
     
     private func generateTestData() {
-        let testDataGenerator = TestDataGenerator()
-        testDataGenerator.generateAllTestFiles(in: workspaceManager.plotsDirectory)
+        workspaceManager.generateTestData()
+        showingTestDataAlert = true
     }
     
     private func clearWorkspace() {
         #if canImport(AppKit)
         let alert = NSAlert()
         alert.messageText = "Clear Workspace"
-        alert.informativeText = "This will permanently delete all files in the current workspace. This action cannot be undone."
+        alert.informativeText = "This will permanently delete all files in the current workspace, including subdirectories. This action cannot be undone."
         alert.addButton(withTitle: "Clear")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
         
         if alert.runModal() == .alertFirstButtonReturn {
             do {
-                let contents = try FileManager.default.contentsOfDirectory(at: workspaceManager.currentWorkspace, includingPropertiesForKeys: nil)
-                for item in contents {
-                    try FileManager.default.removeItem(at: item)
-                }
+                try workspaceManager.clearCurrentWorkspace()
             } catch {
                 print("Failed to clear workspace: \(error)")
+                
+                // Show error alert
+                let errorAlert = NSAlert()
+                errorAlert.messageText = "Clear Failed"
+                errorAlert.informativeText = "Failed to clear workspace: \(error.localizedDescription)"
+                errorAlert.alertStyle = .critical
+                errorAlert.runModal()
             }
         }
         #endif
@@ -509,6 +605,10 @@ struct WorkspaceRow: View {
     let workspace: WorkspaceInfo
     let onSwitch: () -> Void
     let onDelete: () -> Void
+    let onRename: ((String) -> Void)?
+    
+    @State private var showingRenameAlert = false
+    @State private var newName = ""
     
     var body: some View {
         HStack {
@@ -525,11 +625,22 @@ struct WorkspaceRow: View {
             Spacer()
             
             if workspace.isCurrent {
-                Text("Current")
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(.blue.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+                HStack(spacing: 8) {
+                    Text("Current")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(.blue.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+                    
+                    if onRename != nil {
+                        Button("Rename") {
+                            newName = workspace.name
+                            showingRenameAlert = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    }
+                }
             } else {
                 HStack {
                     Button("Switch", action: onSwitch)
@@ -544,6 +655,17 @@ struct WorkspaceRow: View {
             }
         }
         .padding(.vertical, 4)
+        .alert("Rename Workspace", isPresented: $showingRenameAlert) {
+            TextField("Workspace name", text: $newName)
+            Button("Cancel", role: .cancel) { }
+            Button("Rename") {
+                if !newName.isEmpty {
+                    onRename?(newName)
+                }
+            }
+        } message: {
+            Text("Enter a new name for this workspace")
+        }
     }
 }
 
@@ -576,97 +698,6 @@ struct ExportOptionRow: View {
             .background(isSelected ? .blue.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Test Data Generator
-
-class TestDataGenerator {
-    func generateAllTestFiles(in directory: URL) {
-        // Create plots directory if it doesn't exist
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        
-        generateHeadphoneTestData(in: directory)
-        generateHRIRTestData(in: directory)
-        generateRoomCorrectionData(in: directory)
-        generateBeforeAfterData(in: directory)
-    }
-    
-    private func generateHeadphoneTestData(in directory: URL) {
-        let frequencies = stride(from: 20.0, through: 20000.0, by: 20.0).map { $0 }
-        let csvPath = directory.appendingPathComponent("headphones-test.csv")
-        
-        var csvContent = "frequency,left_db,right_db,left_right_diff\n"
-        
-        for freq in frequencies {
-            // Create realistic headphone response
-            let bassRolloff = freq < 100 ? -12 * log10(freq / 100) : 0
-            let presencePeak = 6 * exp(-pow((log10(freq) - log10(3000)) / 0.3, 2))
-            let trebleRolloff = freq > 10000 ? -6 * log10(freq / 10000) : 0
-            let noise = Double.random(in: -0.5...0.5)
-            
-            let leftResponse = bassRolloff + presencePeak + trebleRolloff + noise
-            let rightResponse = leftResponse + Double.random(in: -0.2...0.2)
-            let diff = leftResponse - rightResponse
-            
-            csvContent += "\(freq),\(leftResponse),\(rightResponse),\(diff)\n"
-        }
-        
-        try? csvContent.write(to: csvPath, atomically: true, encoding: .utf8)
-    }
-    
-    private func generateHRIRTestData(in directory: URL) {
-        let frequencies = stride(from: 20.0, through: 20000.0, by: 25.0).map { $0 }
-        let csvPath = directory.appendingPathComponent("hrir-test.csv")
-        
-        var csvContent = "frequency,FL_left,FL_right,FR_left,FR_right\n"
-        
-        for freq in frequencies {
-            let baseResponse = -3 * log10(freq / 1000)
-            
-            let flLeft = baseResponse + 3 * exp(-pow((log10(freq) - log10(100)) / 0.5, 2)) + Double.random(in: -0.3...0.3)
-            let flRight = baseResponse + Double.random(in: -0.3...0.3)
-            let frLeft = baseResponse + Double.random(in: -0.3...0.3)
-            let frRight = baseResponse + 2 * exp(-pow((log10(freq) - log10(5000)) / 0.3, 2)) + Double.random(in: -0.3...0.3)
-            
-            csvContent += "\(freq),\(flLeft),\(flRight),\(frLeft),\(frRight)\n"
-        }
-        
-        try? csvContent.write(to: csvPath, atomically: true, encoding: .utf8)
-    }
-    
-    private func generateRoomCorrectionData(in directory: URL) {
-        let frequencies = stride(from: 20.0, through: 20000.0, by: 30.0).map { $0 }
-        let csvPath = directory.appendingPathComponent("room-correction-test.csv")
-        
-        var csvContent = "frequency,room_measured,target_response,correction_needed\n"
-        
-        for freq in frequencies {
-            let roomResponse = 5 * exp(-pow((log10(freq) - log10(60)) / 0.4, 2)) - 8 * exp(-pow((log10(freq) - log10(15000)) / 0.3, 2))
-            let targetResponse = -1 * log10(freq / 1000)
-            let correction = targetResponse - roomResponse
-            
-            csvContent += "\(freq),\(roomResponse),\(targetResponse),\(correction)\n"
-        }
-        
-        try? csvContent.write(to: csvPath, atomically: true, encoding: .utf8)
-    }
-    
-    private func generateBeforeAfterData(in directory: URL) {
-        let frequencies = stride(from: 20.0, through: 20000.0, by: 35.0).map { $0 }
-        let csvPath = directory.appendingPathComponent("before-after-test.csv")
-        
-        var csvContent = "frequency,before_processing,after_processing,improvement\n"
-        
-        for freq in frequencies {
-            let beforeResponse = -8 * log10(freq / 100) + 8 * exp(-pow((log10(freq) - log10(3000)) / 0.2, 2)) - 15 * exp(-pow((log10(freq) - log10(12000)) / 0.25, 2))
-            let afterResponse = -2 * log10(freq / 1000) + Double.random(in: -0.4...0.4)
-            let improvement = afterResponse - beforeResponse
-            
-            csvContent += "\(freq),\(beforeResponse),\(afterResponse),\(improvement)\n"
-        }
-        
-        try? csvContent.write(to: csvPath, atomically: true, encoding: .utf8)
     }
 }
 

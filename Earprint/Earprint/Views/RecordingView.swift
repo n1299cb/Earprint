@@ -57,28 +57,11 @@ struct RecordingView: View {
         }
     }
     
-    // Define local types to work with RecordingViewModel
-    struct SpeakerLayoutInfo {
-        let name: String
-        let displayName: String
-        let groups: [RecordingGroup]
-        let icon: String
-    }
-    
-    struct RecordingGroup {
-        let name: String
-        let speakers: [String]
-        
-        var filename: String {
-            return "\(name).wav"
-        }
-    }
-    
     private var canStartRecording: Bool {
         !testSignalPath.isEmpty &&
         audioDeviceVM.selectedInputDevice != nil &&
         audioDeviceVM.selectedOutputDevice != nil &&
-        !processingVM.isRunning
+        !recordingVM.isRecording  // Changed from processingVM.isRunning
     }
     
     private var currentLayout: SpeakerLayoutInfo? {
@@ -243,10 +226,10 @@ struct RecordingView: View {
                 }
                 
                 self.availableLayouts = convertedLayouts
-                // Set default layout if not already set
                 if self.selectedLayoutName.isEmpty && !convertedLayouts.isEmpty {
-                    self.selectedLayoutName = convertedLayouts.keys.sorted().first ?? "2.0"
+                self.selectedLayoutName = convertedLayouts.keys.sorted().first ?? "2.0"
                 }
+                self.validateCurrentLayout()
             }
         }
     }
@@ -266,40 +249,84 @@ struct RecordingView: View {
         }
     }
     
+    // MARK: - Validation method for RecordingView
+
+    private func validateCurrentLayout() {
+        guard let layout = currentLayout else { return }
+        
+        // Convert to ViewModel layout format
+        let vmGroups = layout.groups.map { localGroup in
+            RecordingGroup(name: localGroup.name, speakers: localGroup.speakers)
+        }
+        
+        let vmLayout = SpeakerLayoutInfo(
+            name: layout.name,
+            displayName: layout.displayName,
+            groups: vmGroups,
+            icon: layout.icon
+        )
+        
+        // Check for missing test signals
+        let missingSignals = recordingVM.validateTestSignalsForLayout(vmLayout)
+        
+        if !missingSignals.isEmpty {
+            print("⚠️ Missing test signals for groups: \(missingSignals.joined(separator: ", "))")
+            // You could show this warning in the UI if needed
+        }
+    }
+
     private func startRecording() {
-        if processingVM.isRunning {
-            // Stop recording - you'll need to implement this method in ProcessingViewModel
-            // processingVM.stopProcessing()
+        if recordingVM.isRecording {
+            // Stop recording
+            recordingVM.stopRecording()
             return
         } else {
             guard let inputDevice = audioDeviceVM.selectedInputDevice,
                   let outputDevice = audioDeviceVM.selectedOutputDevice else { return }
             
-            // For measurement recordings, use speaker layout-specific file naming
+            // For measurement recordings, use ViewModel's smart selection
             if recordingType == .measurement, let layout = currentLayout {
-                let groups = layout.groups
-                
-                for (index, group) in groups.enumerated() {
-                    let outputPath = useCustomName && !outputFileName.isEmpty && groups.count == 1
-                        ? workspaceManager.currentWorkspace.appendingPathComponent("\(outputFileName).wav").path
-                        : workspaceManager.currentWorkspace.appendingPathComponent(group.filename).path
-                    
-                    // Create configuration for each recording group
-                    let configuration = RecordingConfiguration(
-                        measurementDir: workspaceManager.currentWorkspace.path,
-                        testSignal: testSignalPath,
-                        playbackDevice: String(outputDevice.id),
-                        recordingDevice: String(inputDevice.id),
-                        outputFile: outputPath
-                    )
-                    
-                    // For now, start the first group (this should be expanded for multi-group workflows)
-                    if index == 0 {
-                        // You'll need to implement this method in ProcessingViewModel
-                        // processingVM.startRecording(with: configuration)
-                        recordingResultsURL = URL(fileURLWithPath: outputPath)
-                    }
+                // Convert local layout to ViewModel layout
+                let vmGroups = layout.groups.map { localGroup in
+                    RecordingGroup(name: localGroup.name, speakers: localGroup.speakers)
                 }
+                
+                let vmLayout = SpeakerLayoutInfo(
+                    name: layout.name,
+                    displayName: layout.displayName,
+                    groups: vmGroups,
+                    icon: layout.icon
+                )
+                
+                // Create base configuration
+                let configuration = RecordingConfiguration(
+                    measurementDir: workspaceManager.currentWorkspace.path,
+                    testSignal: testSignalPath, // This will be overridden by smart selection
+                    playbackDevice: String(outputDevice.id),
+                    recordingDevice: String(inputDevice.id),
+                    outputFile: "", // This will be set by the ViewModel
+                    speakerLayout: layout.name,
+                    recordingGroup: nil, // This will be set by the ViewModel
+                    outputChannels: [0, 1], // This will be overridden by smart selection
+                    inputChannels: [0, 1]
+                )
+                
+                // Use ViewModel's smart recording method
+                recordingVM.startRecordingWithLayout(
+                    configuration: configuration,
+                    layout: vmLayout
+                )
+                
+                // Set results URL for the first group
+                if let firstGroup = layout.groups.first {
+                    recordingResultsURL = workspaceManager.currentWorkspace.appendingPathComponent(firstGroup.filename)
+                }
+                
+                // TODO: Implement sequential recording for multi-group layouts
+                if layout.groups.count > 1 {
+                    print("⚠️ Multi-group recording not yet implemented. Recording first group only.")
+                }
+                
             } else {
                 // Traditional single-file recording for other types
                 let configuration = RecordingConfiguration(
@@ -307,12 +334,15 @@ struct RecordingView: View {
                     testSignal: testSignalPath,
                     playbackDevice: String(outputDevice.id),
                     recordingDevice: String(inputDevice.id),
-                    outputFile: finalOutputPath
+                    outputFile: finalOutputPath,
+                    speakerLayout: nil,
+                    recordingGroup: nil,
+                    outputChannels: [0, 1],
+                    inputChannels: [0, 1]
                 )
                 
-                // Start recording - you'll need to implement this method in ProcessingViewModel
-                // processingVM.startRecording(with: configuration)
-                
+                // Start recording using standard method
+                recordingVM.startRecording(with: configuration)
                 recordingResultsURL = URL(fileURLWithPath: finalOutputPath)
             }
         }
@@ -364,11 +394,11 @@ struct WorkspaceInfoSection: View {
                     
                     Spacer()
                     
-                    Text(workspaceManager.currentWorkspace.path)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    //Text(workspaceManager.currentWorkspace.path)
+                    //    .font(.system(.caption2, design: .monospaced))
+                    //    .foregroundColor(.secondary)
+                    //    .lineLimit(1)
+                    //    .truncationMode(.middle)
                 }
             }
             .padding()
@@ -380,7 +410,7 @@ struct WorkspaceInfoSection: View {
 struct RecordingHeaderView: View {
     @Binding var recordingType: RecordingView.RecordingType
     @Binding var selectedLayoutName: String
-    let availableLayouts: [String: RecordingView.SpeakerLayoutInfo]
+    let availableLayouts: [String: SpeakerLayoutInfo]
     let isRecording: Bool
     let canStartRecording: Bool
     let finalOutputPath: String
@@ -388,7 +418,7 @@ struct RecordingHeaderView: View {
     let startRecordingAction: () -> Void
     @ObservedObject var audioDeviceVM: AudioDeviceViewModel
     
-    private var currentLayout: RecordingView.SpeakerLayoutInfo? {
+    private var currentLayout: SpeakerLayoutInfo? {
         availableLayouts[selectedLayoutName]
     }
     
@@ -481,7 +511,7 @@ struct RecordingHeaderView: View {
                     if recordingType == .measurement && !availableLayouts.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Image(systemName: currentLayout?.icon ?? "speaker.wave.3")
+                                Image(systemName: "speaker.wave.3")
                                     .foregroundColor(.accentColor)
                                 Text("Speaker Layout")
                                     .font(.headline)
@@ -505,10 +535,12 @@ struct RecordingHeaderView: View {
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                     
-                                    ForEach(Array(layout.groups.enumerated()), id: \.offset) { index, group in
-                                        Text("\(index + 1). \(group.filename)")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
+                                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), alignment: .leading, spacing: 4) {
+                                        ForEach(Array(layout.groups.enumerated()), id: \.offset) { index, group in
+                                            Text(group.filename)
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
                                     }
                                 }
                                 .padding(8)
@@ -598,7 +630,7 @@ struct RecordingConfigurationSection: View {
     @Binding var outputFileName: String
     @Binding var useCustomName: Bool
     let recordingType: RecordingView.RecordingType
-    let currentLayout: RecordingView.SpeakerLayoutInfo?
+    let currentLayout: SpeakerLayoutInfo?
     @Binding var showingTestSignalPicker: Bool
     @ObservedObject var workspaceManager: WorkspaceManager
     

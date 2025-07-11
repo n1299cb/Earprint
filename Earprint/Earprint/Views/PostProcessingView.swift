@@ -4,7 +4,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct PostProcessingView: View {
-    @ObservedObject var viewModel: ProcessingViewModel
+    @ObservedObject var processingVM: ProcessingViewModel
     @Binding var measurementDir: String
     @Binding var testSignal: String
     @EnvironmentObject var workspaceManager: WorkspaceManager
@@ -66,9 +66,8 @@ struct PostProcessingView: View {
                     workspaceInfoSection
                     
                     detailSections
-                    controlsSection
                     
-                    if !viewModel.log.isEmpty {
+                    if !processingVM.log.isEmpty {
                         logSection
                     }
                 }
@@ -133,9 +132,16 @@ struct PostProcessingView: View {
                     
                     Spacer()
                     
-                    Text("Output will be saved to: plots/")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Processed audio files will be saved to:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text(workspaceManager.workspaceName)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                    }
                 }
             }
             .padding()
@@ -146,14 +152,77 @@ struct PostProcessingView: View {
     
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Post-Processing")
-                    .font(.title2)
-                    .fontWeight(.semibold)
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Post-Processing")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    
+                    Text("Select compensation types and configure processing parameters")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
                 
-                Text("Select compensation types and configure processing parameters")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                Spacer()
+                
+                // Action Buttons
+                HStack(spacing: 12) {
+                    Button("Clear Log") {
+                        processingVM.clearLog()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(processingVM.log.isEmpty)
+                    
+                    Button("Save Log") {
+                        if let url = savePanel(startPath: workspaceManager.currentWorkspace.path) {
+                            try? processingVM.log.write(to: url, atomically: true, encoding: .utf8)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(processingVM.log.isEmpty)
+                    
+                    Button(action: {
+                        runPostProcessing()
+                    }) {
+                        HStack {
+                            if processingVM.isRunning {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            }
+                            Text(processingVM.isRunning ? "Processing..." : "Start Post-Processing")
+                        }
+                    }
+                    .disabled(!canProcess || processingVM.isRunning)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    
+                    if processingVM.isRunning {
+                        Button("Cancel") {
+                            processingVM.cancel()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+            
+            // Progress Bar (if running)
+            if processingVM.isRunning {
+                VStack(spacing: 8) {
+                    if let progress = processingVM.progress {
+                        ProgressView(value: progress)
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .frame(maxWidth: .infinity)
+                    }
+                    
+                    if let remaining = processingVM.remainingTime {
+                        Text(String(format: "%.1fs remaining", remaining))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
             
             if !validationErrors.isEmpty {
@@ -545,67 +614,6 @@ struct PostProcessingView: View {
         .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
     }
     
-    private var controlsSection: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Button(action: {
-                    runPostProcessing()
-                }) {
-                    HStack {
-                        if viewModel.isRunning {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                        }
-                        Text(viewModel.isRunning ? "Processing..." : "Start Post-Processing")
-                    }
-                }
-                .disabled(!canProcess || viewModel.isRunning)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                
-                if viewModel.isRunning {
-                    Button("Cancel") {
-                        viewModel.cancel()
-                    }
-                    .buttonStyle(.bordered)
-                }
-                
-                Spacer()
-                
-                Button("Clear Log") {
-                    viewModel.clearLog()
-                }
-                .disabled(viewModel.log.isEmpty)
-                
-                Button("Save Log") {
-                    if let url = savePanel(startPath: workspaceManager.currentWorkspace.path) {
-                        try? viewModel.log.write(to: url, atomically: true, encoding: .utf8)
-                    }
-                }
-                .disabled(viewModel.log.isEmpty)
-            }
-            
-            if viewModel.isRunning {
-                if let progress = viewModel.progress {
-                    ProgressView(value: progress)
-                        .frame(maxWidth: .infinity)
-                } else {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .frame(maxWidth: .infinity)
-                }
-                
-                if let remaining = viewModel.remainingTime {
-                    Text(String(format: "%.1fs remaining", remaining))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-    }
-    
     private var logSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Processing Log")
@@ -613,7 +621,7 @@ struct PostProcessingView: View {
                 .fontWeight(.semibold)
             
             ScrollView {
-                Text(viewModel.log)
+                Text(processingVM.log)
                     .font(.system(.caption, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -716,7 +724,7 @@ struct PostProcessingView: View {
             interactiveDelays: interactiveDelays
         )
         
-        viewModel.run(configuration: configuration)
+        processingVM.run(configuration: configuration)
         
         // If CSV export is enabled, run the export script after processing
         if exportCSV {
@@ -750,14 +758,14 @@ struct PostProcessingView: View {
                 
                 DispatchQueue.main.async {
                     if process.terminationStatus == 0 {
-                        viewModel.logMessage("CSV export completed successfully")
+                        processingVM.logMessage("CSV export completed successfully")
                     } else {
-                        viewModel.logMessage("CSV export failed with status: \(process.terminationStatus)")
+                        processingVM.logMessage("CSV export failed with status: \(process.terminationStatus)")
                     }
                 }
             } catch {
                 DispatchQueue.main.async {
-                    viewModel.logMessage("Failed to run CSV export: \(error.localizedDescription)")
+                    processingVM.logMessage("Failed to run CSV export: \(error.localizedDescription)")
                 }
             }
         }
