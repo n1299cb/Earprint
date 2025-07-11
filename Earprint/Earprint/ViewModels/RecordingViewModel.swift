@@ -1,71 +1,58 @@
 #if canImport(SwiftUI)
 import SwiftUI
 import Foundation
+import Combine
 
-// MARK: - Recording Models
-// Note: RecordingConfiguration is defined elsewhere in the project
-
-struct RecordingInfo: Identifiable, Equatable {
-    let id = UUID()
-    let name: String
-    let path: String
-    let dateModified: Date
-    let size: Int64
-    let isDirectory: Bool
-    
-    static func == (lhs: RecordingInfo, rhs: RecordingInfo) -> Bool {
-        lhs.path == rhs.path
-    }
-}
-
-struct FileValidationResult {
-    let isValid: Bool
-    let errorMessage: String?
-    let suggestions: [String]
-}
-
-// MARK: - Recording State
+// MARK: - Recording State (single definition)
 enum RecordingState: Equatable {
     case idle
     case scanning
     case validating
     case saving
+    case recording(progress: Double?, remainingTime: Double?)
+    case completed(outputFile: String)
     case error(String)
     
     var isProcessing: Bool {
         switch self {
-        case .scanning, .validating, .saving:
+        case .scanning, .validating, .saving, .recording:
             return true
+        default:
+            return false
+        }
+    }
+    
+    static func == (lhs: RecordingState, rhs: RecordingState) -> Bool {
+        switch (lhs, rhs) {
+        case (.idle, .idle), (.scanning, .scanning), (.validating, .validating), (.saving, .saving):
+            return true
+        case let (.recording(p1, t1), .recording(p2, t2)):
+            return p1 == p2 && t1 == t2
+        case let (.completed(f1), .completed(f2)):
+            return f1 == f2
+        case let (.error(e1), .error(e2)):
+            return e1 == e2
         default:
             return false
         }
     }
 }
 
-// MARK: - Speaker Layout Support Types
-// These types mirror the RecordingView types but are defined independently to avoid circular dependencies
-struct SpeakerLayoutInfo {
-    let name: String
-    let displayName: String
-    let groups: [RecordingGroup]
-    let icon: String
+// MARK: - Recording State (multigroup)
+enum SequentialRecordingState: Equatable {
+    case idle
+    case recordingGroup(currentGroup: Int, totalGroups: Int, groupName: String)
+    case betweenGroups(nextGroup: Int, totalGroups: Int, nextGroupName: String)
+    case completed(totalRecordings: Int)
+    case error(String)
 }
 
-struct RecordingGroup {
-    let name: String
-    let speakers: [String]
-    
-    var filename: String {
-        return "\(name).wav"
-    }
-}
-
-// MARK: - Enhanced RecordingViewModel
+// MARK: - Enhanced RecordingViewModel (macOS)
 @MainActor
 final class RecordingViewModel: ObservableObject {
     
     // MARK: - Published Properties
-    @Published var state: RecordingState = .idle
+    @Published var recordingState: RecordingState = .idle
     @Published var hasFiles: Bool = false
     @Published var recordings: [RecordingInfo] = []
     @Published var latestRecording: RecordingInfo?
@@ -73,6 +60,9 @@ final class RecordingViewModel: ObservableObject {
     @Published var selectedRecordings: Set<String> = []
     @Published var showErrorAlert: Bool = false
     @Published var errorMessage: String = ""
+    @Published var sequentialState: SequentialRecordingState = .idle
+    @Published var currentRecordingConfiguration: RecordingConfiguration?
+    @Published var remainingGroups: [RecordingGroup] = []
     
     // MARK: - Computed Properties
     var recordingName: String {
@@ -84,23 +74,550 @@ final class RecordingViewModel: ObservableObject {
     }
     
     var canSave: Bool {
-        !selectedRecordings.isEmpty && !state.isProcessing
+        !selectedRecordings.isEmpty && !recordingState.isProcessing
     }
-    
+
+    var isRecording: Bool {
+        if case .recording = recordingState { return true }
+        return false
+    }
+
+    var recordingProgress: Double? {
+        if case .recording(let progress, _) = recordingState { return progress }
+        return nil
+    }
+
+    var recordingRemainingTime: Double? {
+        if case .recording(_, let time) = recordingState { return time }
+        return nil
+    }
+
     // MARK: - Private Properties
     private let fileManager = FileManager.default
+    private var recordingProcess: Process?
+    private var recordingTimer: Timer?
     
-    // MARK: - Public Methods
+    // MARK: - Utility Properties
+    private var scriptsRoot: URL {
+        (Bundle.main.resourceURL ?? packageRoot).appendingPathComponent("Scripts")
+    }
+
+    private var embeddedPythonURL: URL? {
+        Bundle.main.url(forResource: "Python", withExtension: "framework", subdirectory: "EmbeddedPython")?
+            .appendingPathComponent("Versions")
+            .appendingPathComponent("Current")
+            .appendingPathComponent("bin/python3")
+    }
+
+    private func scriptPath(_ name: String) -> String {
+        scriptsRoot.appendingPathComponent(name).path
+    }
+
+    private var packageRoot: URL {
+        Bundle.main.bundleURL
+    }
+
+    // MARK: - Recording Operations
+    func startRecording(with configuration: RecordingConfiguration) {
+        guard !isRecording else { return }
+        
+        recordingState = .recording(progress: nil, remainingTime: nil)
+        let args = buildRecordingArgs(configuration)
+        startPython(script: scriptPath("recorder.py"), args: args)
+    }
+
+    func stopRecording() {
+        cancelRecording()
+    }
+
+    private func buildRecordingArgs(_ configuration: RecordingConfiguration) -> [String] {
+        var args = [
+            "--measurement_dir", configuration.measurementDir,
+            "--test_signal", configuration.testSignal,
+            "--playback_device", configuration.playbackDevice,
+            "--recording_device", configuration.recordingDevice
+        ]
+        
+        // Add output file if specified
+        if let outputFile = configuration.outputFile {
+            args.append("--output_file")
+            args.append(outputFile)
+        }
+        
+        // Add speaker layout if specified
+        if let speakerLayout = configuration.speakerLayout {
+            args.append("--layout")
+            args.append(speakerLayout)
+        }
+        
+        // Add recording group if specified
+        if let recordingGroup = configuration.recordingGroup {
+            args.append("--group")
+            args.append(recordingGroup)
+        }
+        
+        // Add output and input channels if specified
+        if let outputChannels = configuration.outputChannels {
+            args.append("--output_channels")
+            args.append(outputChannels.map(String.init).joined(separator: ","))
+        }
+        
+        if let inputChannels = configuration.inputChannels {
+            args.append("--input_channels")
+            args.append(inputChannels.map(String.init).joined(separator: ","))
+        }
+        
+        return args
+    }
+
+    private func cancelRecording() {
+        recordingProcess?.terminate()
+        recordingProcess = nil
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        recordingState = .idle
+    }
+
+    // MARK: - Python Execution Infrastructure
+    private func startPython(script: String, args: [String]) {
+        let process = Process()
+        process.currentDirectoryURL = scriptsRoot
+        
+        if let py = embeddedPythonURL {
+            process.executableURL = py
+            process.arguments = [script] + args
+            process.environment = [
+                "PYTHONHOME": py.deletingLastPathComponent().deletingLastPathComponent().path,
+                "PYTHONPATH": scriptsRoot.path
+            ]
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["python3", script] + args
+        }
+        
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            if !data.isEmpty, let output = String(data: data, encoding: .utf8) {
+                DispatchQueue.main.async {
+                    self?.processRecordingOutput(output)
+                }
+            }
+        }
+        
+        process.terminationHandler = { [weak self] process in
+            DispatchQueue.main.async {
+                self?.recordingTerminated(with: process.terminationStatus)
+            }
+        }
+        
+        do {
+            try process.run()
+            self.recordingProcess = process
+            startRecordingProgressMonitoring()
+        } catch {
+            recordingState = .error("Failed to start recording process: \(error.localizedDescription)")
+            print("Failed to start recording process: \(error.localizedDescription)")
+        }
+    }
+
+    private func processRecordingOutput(_ output: String) {
+        print("Recording output: \(output)")
+        parseRecordingProgressFromOutput(output)
+    }
+
+    private func parseRecordingProgressFromOutput(_ output: String) {
+        // Parse progress indicators from Python recorder output
+        if let progressMatch = output.range(of: #"(\d+\.?\d*)%"#, options: .regularExpression) {
+            let progressStr = String(output[progressMatch])
+            if let progressValue = Double(progressStr.replacingOccurrences(of: "%", with: "")) {
+                let normalizedProgress = progressValue / 100.0
+                if case .recording(_, let time) = recordingState {
+                    recordingState = .recording(progress: normalizedProgress, remainingTime: time)
+                }
+            }
+        }
+    }
+
+    // MARK: - Updated Recording Termination Handler
+
+    private func recordingTerminated(with status: Int32) {
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        recordingProcess = nil
+        
+        if status == 0 {
+            // Check if this is part of a sequential recording
+            if case .recordingGroup = sequentialState {
+                onGroupRecordingCompleted()
+            } else {
+                recordingState = .completed(outputFile: "Recording completed")
+            }
+            print("Recording completed successfully")
+        } else {
+            if case .recordingGroup = sequentialState {
+                sequentialState = .error("Group recording failed with status: \(status)")
+            }
+            recordingState = .error("Recording failed with status: \(status)")
+            print("Recording failed with status: \(status)")
+        }
+    }
+
+    private func startRecordingProgressMonitoring() {
+        recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            // Update recording UI or check process status
+        }
+    }
+
+    // MARK: - Specialized Recording Methods
+    func recordHeadphoneEQ(configuration: RecordingConfiguration) {
+        let file = URL(fileURLWithPath: configuration.measurementDir)
+            .appendingPathComponent("headphones.wav").path
+        
+        let updatedConfig = RecordingConfiguration(
+            measurementDir: configuration.measurementDir,
+            testSignal: configuration.testSignal,
+            playbackDevice: configuration.playbackDevice,
+            recordingDevice: configuration.recordingDevice,
+            outputFile: file,
+            speakerLayout: configuration.speakerLayout,
+            recordingGroup: configuration.recordingGroup,
+            outputChannels: configuration.outputChannels,
+            inputChannels: configuration.inputChannels
+        )
+        
+        startRecording(with: updatedConfig)
+    }
+
+    func recordRoomResponse(configuration: RecordingConfiguration) {
+        let file = URL(fileURLWithPath: configuration.measurementDir)
+            .appendingPathComponent("room.wav").path
+        
+        let updatedConfig = RecordingConfiguration(
+            measurementDir: configuration.measurementDir,
+            testSignal: configuration.testSignal,
+            playbackDevice: configuration.playbackDevice,
+            recordingDevice: configuration.recordingDevice,
+            outputFile: file,
+            speakerLayout: configuration.speakerLayout,
+            recordingGroup: configuration.recordingGroup,
+            outputChannels: configuration.outputChannels,
+            inputChannels: configuration.inputChannels
+        )
+        
+        startRecording(with: updatedConfig)
+    }
+
+    // MARK: - Sequential Recording Methods
+
+    func startSequentialRecording(with configuration: RecordingConfiguration, layout: SpeakerLayoutInfo) {
+        guard !layout.groups.isEmpty else {
+            recordingState = .error("Invalid speaker layout: no groups defined")
+            return
+        }
+        
+        // Store configuration and setup sequence
+        currentRecordingConfiguration = configuration
+        remainingGroups = layout.groups
+        sequentialState = .idle
+        
+        // Start with first group
+        startNextGroupRecording()
+    }
+
+    private func startNextGroupRecording() {
+        guard let baseConfig = currentRecordingConfiguration,
+              !remainingGroups.isEmpty else {
+            completeSequentialRecording()
+            return
+        }
+        
+        let currentGroup = remainingGroups.removeFirst()
+        let groupIndex = (currentRecordingConfiguration?.speakerLayout == nil ? 0 :
+                         (getSpeakerLayoutInfo()?.groups.count ?? 1) - remainingGroups.count - 1)
+        let totalGroups = getSpeakerLayoutInfo()?.groups.count ?? 1
+        
+        // Update state
+        sequentialState = .recordingGroup(
+            currentGroup: groupIndex + 1,
+            totalGroups: totalGroups,
+            groupName: currentGroup.name
+        )
+        
+        // Create configuration for this specific group
+        let groupOutputPath = baseConfig.measurementDir.appending("/\(currentGroup.filename)")
+        
+        let groupConfig = RecordingConfiguration(
+            measurementDir: baseConfig.measurementDir,
+            testSignal: baseConfig.testSignal,
+            playbackDevice: baseConfig.playbackDevice,
+            recordingDevice: baseConfig.recordingDevice,
+            outputFile: groupOutputPath,
+            speakerLayout: baseConfig.speakerLayout,
+            recordingGroup: currentGroup.name,
+            outputChannels: getOutputChannelsForGroup(currentGroup),
+            inputChannels: baseConfig.inputChannels
+        )
+        
+        // Start recording this group
+        startRecording(with: groupConfig)
+    }
+
+    private func getOutputChannelsForGroup(_ group: RecordingGroup) -> [Int]? {
+        // Map speaker names to output channels
+        // This would need to be implemented based on your channel mapping logic
+        // For now, return default stereo mapping
+        return [0, 1]
+    }
+
+    private func getSpeakerLayoutInfo() -> SpeakerLayoutInfo? {
+        // Get current layout info - this would need to be passed in or stored
+        return nil // Placeholder
+    }
+
+    func onGroupRecordingCompleted() {
+        if remainingGroups.isEmpty {
+            completeSequentialRecording()
+        } else {
+            // Show transition UI for next group
+            let nextGroup = remainingGroups.first!
+            let nextGroupIndex = (getSpeakerLayoutInfo()?.groups.count ?? 1) - remainingGroups.count + 1
+            let totalGroups = getSpeakerLayoutInfo()?.groups.count ?? 1
+            
+            sequentialState = .betweenGroups(
+                nextGroup: nextGroupIndex,
+                totalGroups: totalGroups,
+                nextGroupName: nextGroup.name
+            )
+            
+            // Auto-advance after delay, or wait for user input
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.startNextGroupRecording()
+            }
+        }
+    }
+
+    private func completeSequentialRecording() {
+        let totalRecordings = getSpeakerLayoutInfo()?.groups.count ?? 1
+        sequentialState = .completed(totalRecordings: totalRecordings)
+        recordingState = .completed(outputFile: "Sequential recording completed")
+        
+        // Clean up
+        currentRecordingConfiguration = nil
+        remainingGroups = []
+        
+        // Auto-reset after showing completion
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            self.sequentialState = .idle
+        }
+    }
+
+    func cancelSequentialRecording() {
+        cancelRecording() // Stop current recording
+        currentRecordingConfiguration = nil
+        remainingGroups = []
+        sequentialState = .idle
+    }
+
+    // MARK: - Smart Test Signal Selection (Add to RecordingViewModel)
+
+    /// Get the appropriate test signal file for a specific recording group
+    private func getTestSignalForGroup(_ group: RecordingGroup) -> String {
+        guard let scriptsRoot = Bundle.main.resourceURL?.appendingPathComponent("Scripts") else {
+            print("❌ Scripts directory not found")
+            return getDefaultTestSignal()
+        }
+        
+        let dataDir = scriptsRoot.appendingPathComponent("data")
+        
+        if group.speakers.count == 1 {
+            // Single speaker - prefer mono sweep, fallback to stereo
+            let speaker = group.speakers[0]
+            
+            // Try mono sweep first
+            let monoFile = dataDir.appendingPathComponent("sweep-seg-\(speaker)-mono-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav")
+            if fileManager.fileExists(atPath: monoFile.path) {
+                print("✅ Using mono sweep for single speaker \(speaker): \(monoFile.lastPathComponent)")
+                return monoFile.path
+            }
+            
+            // Fallback to stereo sweep for single speaker
+            let stereoFile = dataDir.appendingPathComponent("sweep-seg-\(speaker)-stereo-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav")
+            if fileManager.fileExists(atPath: stereoFile.path) {
+                print("✅ Using stereo sweep for single speaker \(speaker): \(stereoFile.lastPathComponent)")
+                return stereoFile.path
+            }
+            
+            print("⚠️ No specific sweep found for speaker \(speaker), using default")
+            
+        } else if group.speakers.count == 2 {
+            // Stereo pair - use stereo sweep
+            let groupName = group.speakers.joined(separator: ",")
+            let stereoFile = dataDir.appendingPathComponent("sweep-seg-\(groupName)-stereo-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav")
+            
+            if fileManager.fileExists(atPath: stereoFile.path) {
+                print("✅ Using stereo sweep for pair \(groupName): \(stereoFile.lastPathComponent)")
+                return stereoFile.path
+            }
+            
+            print("⚠️ No specific sweep found for pair \(groupName), using default")
+            
+        } else {
+            // Multi-speaker group (more than 2) - this might need special handling
+            let groupName = group.speakers.joined(separator: ",")
+            let multiFile = dataDir.appendingPathComponent("sweep-seg-\(groupName)-stereo-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav")
+            
+            if fileManager.fileExists(atPath: multiFile.path) {
+                print("✅ Using multi-speaker sweep for \(groupName): \(multiFile.lastPathComponent)")
+                return multiFile.path
+            }
+            
+            print("⚠️ No specific sweep found for multi-speaker group \(groupName), using default")
+        }
+        
+        // Final fallback to default sweep
+        return getDefaultTestSignal()
+    }
+
+    /// Get the default test signal path
+    private func getDefaultTestSignal() -> String {
+        guard let scriptsRoot = Bundle.main.resourceURL?.appendingPathComponent("Scripts") else {
+            print("❌ Scripts directory not found")
+            return ""
+        }
+        
+        let dataDir = scriptsRoot.appendingPathComponent("data")
+        let defaultSweep = dataDir.appendingPathComponent("sweep-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav")
+        
+        if fileManager.fileExists(atPath: defaultSweep.path) {
+            print("✅ Using default sweep: \(defaultSweep.lastPathComponent)")
+            return defaultSweep.path
+        }
+        
+        print("❌ No default sweep file found")
+        return ""
+    }
+
+    /// Map speaker groups to appropriate output channels
+    private func getOutputChannelsForGroup(_ group: RecordingGroup) -> [Int] {
+        if group.speakers.count == 1 {
+            // Single speaker - map to appropriate channel
+            let speaker = group.speakers[0]
+            switch speaker {
+            case "FL": return [0]      // Left channel
+            case "FR": return [1]      // Right channel
+            case "FC": return [0, 1]   // Center - send to both channels
+            case "SL": return [0]      // Side left
+            case "SR": return [1]      // Side right
+            case "BL": return [0]      // Back left
+            case "BR": return [1]      // Back right
+            case "TFL": return [0]     // Top front left
+            case "TFR": return [1]     // Top front right
+            case "TBL": return [0]     // Top back left
+            case "TBR": return [1]     // Top back right
+            default: return [0, 1]     // Default to stereo
+            }
+        } else if group.speakers.count == 2 {
+            // Stereo pair - use both channels
+            return [0, 1]
+        } else {
+            // Multi-speaker group - use stereo for now
+            // This might need more sophisticated mapping for complex layouts
+            return [0, 1]
+        }
+    }
+
+    /// Validate that appropriate test signals exist for a speaker layout
+    func validateTestSignalsForLayout(_ layoutInfo: SpeakerLayoutInfo) -> [String] {
+        var missingSignals: [String] = []
+        
+        for group in layoutInfo.groups {
+            let testSignal = getTestSignalForGroup(group)
+            if testSignal.isEmpty || !fileManager.fileExists(atPath: testSignal) {
+                missingSignals.append(group.name)
+            }
+        }
+        
+        return missingSignals
+    }
+
+    /// Enhanced recording method with smart test signal selection
+    func startRecordingWithLayout(
+        configuration: RecordingConfiguration,
+        layout: SpeakerLayoutInfo,
+        group: RecordingGroup? = nil
+    ) {
+        guard !isRecording else { return }
+        
+        // Determine which group to record (first group if not specified)
+        let targetGroup = group ?? layout.groups.first
+        guard let recordingGroup = targetGroup else {
+            recordingState = .error("No recording groups found in layout")
+            return
+        }
+        
+        // Get appropriate test signal for this group
+        let selectedTestSignal = getTestSignalForGroup(recordingGroup)
+        guard !selectedTestSignal.isEmpty else {
+            recordingState = .error("No suitable test signal found for group: \(recordingGroup.name)")
+            return
+        }
+        
+        // Create output file path
+        let outputFile = URL(fileURLWithPath: configuration.measurementDir)
+            .appendingPathComponent(recordingGroup.filename).path
+        
+        // Build configuration with smart selections
+        let enhancedConfig = RecordingConfiguration(
+            measurementDir: configuration.measurementDir,
+            testSignal: selectedTestSignal,
+            playbackDevice: configuration.playbackDevice,
+            recordingDevice: configuration.recordingDevice,
+            outputFile: outputFile,
+            speakerLayout: layout.name,
+            recordingGroup: recordingGroup.name,
+            outputChannels: getOutputChannelsForGroup(recordingGroup),
+            inputChannels: configuration.inputChannels
+        )
+        
+        // Start the recording
+        startRecording(with: enhancedConfig)
+    }
+
+    /// Get available test signals for diagnostics
+    func getAvailableTestSignals() -> [String] {
+        guard let scriptsRoot = Bundle.main.resourceURL?.appendingPathComponent("Scripts") else {
+            return []
+        }
+        
+        let dataDir = scriptsRoot.appendingPathComponent("data")
+        
+        do {
+            let contents = try fileManager.contentsOfDirectory(at: dataDir, includingPropertiesForKeys: nil)
+            return contents
+                .filter { $0.pathExtension.lowercased() == "wav" && $0.lastPathComponent.contains("sweep") }
+                .map { $0.lastPathComponent }
+                .sorted()
+        } catch {
+            print("Failed to list test signals: \(error)")
+            return []
+        }
+    }
+
+    // MARK: - File Management Methods
     func validatePaths(_ measurementDir: String) {
         guard !measurementDir.isEmpty else {
-            state = .idle
+            recordingState = .idle
             hasFiles = false
             recordings = []
             latestRecording = nil
             return
         }
         
-        state = .scanning
+        recordingState = .scanning
         
         Task {
             await scanDirectory(measurementDir)
@@ -117,12 +634,12 @@ final class RecordingViewModel: ObservableObject {
         destination: String,
         completion: @escaping (String) -> Void
     ) {
-        guard !state.isProcessing else {
+        guard !recordingState.isProcessing else {
             completion("Save operation already in progress")
             return
         }
         
-        state = .saving
+        recordingState = .saving
         
         Task {
             await performSaveOperation(
@@ -564,6 +1081,11 @@ final class RecordingViewModel: ObservableObject {
             var recordingInfos: [RecordingInfo] = []
             
             for url in contents {
+                // Skip the plots directory and its contents
+                if url.lastPathComponent == "plots" {
+                    continue
+                }
+                
                 do {
                     let resourceValues = try url.resourceValues(forKeys: [
                         .contentModificationDateKey,
@@ -589,7 +1111,7 @@ final class RecordingViewModel: ObservableObject {
                 self.recordings = recordingInfos.sorted { $0.dateModified > $1.dateModified }
                 self.latestRecording = recordingInfos.max { $0.dateModified < $1.dateModified }
                 self.hasFiles = !recordingInfos.isEmpty
-                self.state = .idle
+                self.recordingState = .idle
             }
             
             // Start validation in background
@@ -600,7 +1122,7 @@ final class RecordingViewModel: ObservableObject {
                 self.recordings = []
                 self.latestRecording = nil
                 self.hasFiles = false
-                self.state = .error("Failed to scan directory: \(error.localizedDescription)")
+                self.recordingState = .error("Failed to scan directory: \(error.localizedDescription)")
                 self.errorMessage = error.localizedDescription
                 self.showErrorAlert = true
             }
@@ -609,7 +1131,7 @@ final class RecordingViewModel: ObservableObject {
     
     private func validateRecordings() async {
         await MainActor.run {
-            self.state = .validating
+            self.recordingState = .validating
         }
         
         for recording in recordings {
@@ -620,7 +1142,7 @@ final class RecordingViewModel: ObservableObject {
         }
         
         await MainActor.run {
-            self.state = .idle
+            self.recordingState = .idle
         }
     }
     
@@ -711,7 +1233,7 @@ final class RecordingViewModel: ObservableObject {
             }
             
             await MainActor.run {
-                self.state = .idle
+                self.recordingState = .idle
                 
                 if errors.isEmpty {
                     completion("Successfully saved \(savedCount) file(s) to \(destination)")
@@ -723,7 +1245,7 @@ final class RecordingViewModel: ObservableObject {
             
         } catch {
             await MainActor.run {
-                self.state = .error("Save operation failed")
+                self.recordingState = .error("Save operation failed")
                 self.errorMessage = error.localizedDescription
                 self.showErrorAlert = true
                 completion("Failed to create destination directory: \(error.localizedDescription)")
@@ -733,53 +1255,10 @@ final class RecordingViewModel: ObservableObject {
 }
 
 #else
-// Non-macOS stub implementation
-// Note: RecordingConfiguration is defined elsewhere in the project
 
-struct RecordingInfo: Identifiable, Equatable {
-    let id = UUID()
-    let name: String = ""
-    let path: String = ""
-    let dateModified: Date = Date()
-    let size: Int64 = 0
-    let isDirectory: Bool = false
-    
-    static func == (lhs: RecordingInfo, rhs: RecordingInfo) -> Bool {
-        lhs.path == rhs.path
-    }
-}
-
-struct FileValidationResult {
-    let isValid: Bool = false
-    let errorMessage: String? = nil
-    let suggestions: [String] = []
-}
-
-enum RecordingState: Equatable {
-    case idle
-    case scanning
-    case validating
-    case saving
-    case error(String)
-    
-    var isProcessing: Bool { false }
-}
-
-struct SpeakerLayoutInfo {
-    let name: String = ""
-    let displayName: String = ""
-    let groups: [RecordingGroup] = []
-    let icon: String = ""
-}
-
-struct RecordingGroup {
-    let name: String = ""
-    let speakers: [String] = []
-    var filename: String { "" }
-}
-
+// MARK: - Non-macOS stub implementation
 final class RecordingViewModel: ObservableObject {
-    @Published var state: RecordingState = .idle
+    @Published var recordingState: RecordingState = .idle
     @Published var hasFiles: Bool = false
     @Published var recordings: [RecordingInfo] = []
     @Published var latestRecording: RecordingInfo?
@@ -791,7 +1270,14 @@ final class RecordingViewModel: ObservableObject {
     var recordingName: String { "No recordings" }
     var measurementHasFiles: Bool { false }
     var canSave: Bool { false }
+    var isRecording: Bool { false }
+    var recordingProgress: Double? { nil }
+    var recordingRemainingTime: Double? { nil }
     
+    func startRecording(with configuration: RecordingConfiguration) {}
+    func stopRecording() {}
+    func recordHeadphoneEQ(configuration: RecordingConfiguration) {}
+    func recordRoomResponse(configuration: RecordingConfiguration) {}
     func validatePaths(_ measurementDir: String) {}
     func refreshRecordings(_ measurementDir: String) {}
     func saveFiles(files: [URL], measurementDir: String, destination: String, completion: @escaping (String) -> Void) {}
@@ -810,4 +1296,5 @@ final class RecordingViewModel: ObservableObject {
     func getValidationStatus(_ recording: RecordingInfo) -> String { "" }
     func getRecordingIcon(_ recording: RecordingInfo) -> String { "" }
 }
+
 #endif

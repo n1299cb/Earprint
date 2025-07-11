@@ -52,44 +52,6 @@ final class ProcessingViewModel: ObservableObject {
         }
     }
     
-    func record(configuration: RecordingConfiguration) {
-        guard !isRunning else { return }
-        
-        state = .running(progress: nil, remainingTime: nil)
-        let args = buildRecordingArgs(configuration)
-        startPython(script: scriptPath("recorder.py"), args: args)
-    }
-    
-    func recordHeadphoneEQ(configuration: RecordingConfiguration) {
-        let file = URL(fileURLWithPath: configuration.measurementDir)
-            .appendingPathComponent("headphones.wav").path
-        
-        let updatedConfig = RecordingConfiguration(
-            measurementDir: configuration.measurementDir,
-            testSignal: configuration.testSignal,
-            playbackDevice: configuration.playbackDevice,
-            recordingDevice: configuration.recordingDevice,
-            outputFile: file
-        )
-        
-        record(configuration: updatedConfig)
-    }
-    
-    func recordRoomResponse(configuration: RecordingConfiguration) {
-        let file = URL(fileURLWithPath: configuration.measurementDir)
-            .appendingPathComponent("room.wav").path
-        
-        let updatedConfig = RecordingConfiguration(
-            measurementDir: configuration.measurementDir,
-            testSignal: configuration.testSignal,
-            playbackDevice: configuration.playbackDevice,
-            recordingDevice: configuration.recordingDevice,
-            outputFile: file
-        )
-        
-        record(configuration: updatedConfig)
-    }
-    
     func layoutWizard(layout: String, dir: String) {
         guard !isRunning else { return }
         
@@ -204,22 +166,6 @@ final class ProcessingViewModel: ObservableObject {
         if config.roomCorrection { args += ["--room_target", config.roomTarget] }
         if !config.micCalibration.isEmpty { args += ["--mic_calibration", config.micCalibration] }
         if config.interactiveDelays { args.append("--interactive_delays") }
-        
-        return args
-    }
-    
-    private func buildRecordingArgs(_ config: RecordingConfiguration) -> [String] {
-        var args = [
-            "--output_dir", config.measurementDir,
-            "--test_signal", config.testSignal,
-            "--playback_device", config.playbackDevice,
-            "--recording_device", config.recordingDevice,
-            "--print_progress"
-        ]
-        
-        if let file = config.outputFile {
-            args += ["--output_file", file]
-        }
         
         return args
     }
