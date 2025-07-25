@@ -10,7 +10,7 @@ struct EarprintApp: App {
     @StateObject private var workspaceManager = WorkspaceManager()
     
     // MARK: - App State
-    @AppStorage("selectedSection") private var lastSectionRaw: String = Section.recording.rawValue
+    @AppStorage("selectedSection") private var lastSectionRaw: String = Section.workspace.rawValue
     @State private var selectedSection: Section?
     @State private var showingSettings = false
     
@@ -18,48 +18,41 @@ struct EarprintApp: App {
     @AppStorage("measurementDir") private var measurementDir: String = ""
     @AppStorage("testSignal") private var testSignal: String = ""
     
+    // MARK: - sidebarView
+    private var sidebarView: some View {
+        List(Section.allCases, id: \.self, selection: $selectedSection) { section in
+            NavigationLink(value: section) {
+                Label(section.rawValue, systemImage: section.icon)
+            }
+        }
+        .navigationTitle("Earprint")
+        .navigationSplitViewColumnWidth(min: 200, ideal: 250)
+    }
+    
+    private var detailView: some View {
+        Group {
+            if let section = selectedSection {
+                detailView(for: section)
+            } else {
+                Text("Select a section from the sidebar to get started")
+                    .foregroundColor(.secondary)
+                    .font(.title2)
+            }
+        }
+        .navigationSplitViewColumnWidth(min: 500, ideal: 800)
+    }
+    
     var body: some Scene {
         WindowGroup {
             NavigationSplitView {
-                // Sidebar
-                List(Section.allCases, id: \.self, selection: $selectedSection) { section in
-                    NavigationLink(value: section) {
-                        Label(section.rawValue, systemImage: section.icon)
-                    }
-                }
-                .navigationTitle("Earprint")
-                .navigationSplitViewColumnWidth(min: 200, ideal: 250)
-                .onAppear {
-                    print("Sidebar appeared with sections: \(Section.allCases.map { $0.rawValue })")
-                    print("Selected section: \(selectedSection?.rawValue ?? "nil")")
-                    func testResources() {
-                        if let scriptsPath = Bundle.main.resourcePath {
-                            let scriptsURL = URL(fileURLWithPath: scriptsPath).appendingPathComponent("Scripts")
-                            print("Scripts path: \(scriptsURL.path)")
-                            print("Scripts exists: \(FileManager.default.fileExists(atPath: scriptsURL.path))")
-                            
-                            // List contents
-                            if let contents = try? FileManager.default.contentsOfDirectory(atPath: scriptsURL.path) {
-                                print("Scripts contents: \(contents)")
-                            }
-                        }
-                    }
-                }
+                sidebarView
             } detail: {
-                // Detail View
-                Group {
-                    if let section = selectedSection {
-                        detailView(for: section)
-                    } else {
-                        WelcomeView()
-                    }
-                }
-                .navigationSplitViewColumnWidth(min: 500, ideal: 800)
+                detailView
             }
             .onAppear {
                 // Set initial section if none selected
                 if selectedSection == nil {
-                    selectedSection = Section(rawValue: lastSectionRaw) ?? .recording
+                    selectedSection = Section(rawValue: lastSectionRaw) ?? .workspace
                 }
                 
                 // Load configuration when app starts
@@ -67,9 +60,6 @@ struct EarprintApp: App {
                 audioDeviceVM.refreshDevices()
                 
                 // Initialize workspace paths with current workspace
-                initializeWorkspacePaths()
-                
-                // Load defaults from configuration and initialize RecordingViewModel
                 if measurementDir.isEmpty && !configurationVM.appConfiguration.defaultMeasurementDir.isEmpty {
                     measurementDir = configurationVM.appConfiguration.defaultMeasurementDir
                 }
@@ -83,127 +73,39 @@ struct EarprintApp: App {
                 }
             }
             .onChange(of: selectedSection) { newValue in
-                lastSectionRaw = newValue?.rawValue ?? Section.recording.rawValue
+                lastSectionRaw = newValue?.rawValue ?? Section.workspace.rawValue
             }
             .onChange(of: measurementDir) { newValue in
-                // Update recording validation when measurement directory changes
                 recordingVM.validatePaths(newValue)
-            }
-            .onChange(of: workspaceManager.currentWorkspace) { newWorkspace in
-                // Update measurement directory when workspace changes
-                updateWorkspacePaths()
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView(
                     configurationVM: configurationVM,
-                    audioDeviceVM: audioDeviceVM
+                    audioDeviceVM: audioDeviceVM,
+                    processingVM: processingVM,
+                    recordingVM: recordingVM
                 )
+                .environmentObject(workspaceManager)
                 .frame(minWidth: 800, minHeight: 600)
             }
         }
         .windowResizability(.contentSize)
         .windowToolbarStyle(.unified)
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    showingSettings = true
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+            
             CommandGroup(replacing: .appTermination) {
                 Button("Quit Earprint") {
-                    // Save configuration before quitting
                     if configurationVM.isDirty {
                         configurationVM.saveConfiguration()
                     }
                     NSApplication.shared.terminate(nil)
                 }
-                .keyboardShortcut("q")
-            }
-            
-            CommandGroup(after: .appInfo) {
-                Divider()
-                
-                Button("Preferences...") {
-                    showingSettings = true
-                }
-                .keyboardShortcut(",", modifiers: .command)
-            }
-            
-            CommandMenu("Navigate") {
-                Button("Recording") {
-                    selectedSection = .recording
-                }
-                .keyboardShortcut("1", modifiers: .command)
-                
-                Button("Workspace") {
-                    selectedSection = .workspace
-                }
-                .keyboardShortcut("2", modifiers: .command)
-                
-                Button("Post-Processing") {
-                    selectedSection = .postProcessing
-                }
-                .keyboardShortcut("3", modifiers: .command)
-                
-                Button("Visualization") {
-                    selectedSection = .visualization
-                }
-                .keyboardShortcut("4", modifiers: .command)
-                
-                Divider()
-                
-                Button("Preferences...") {
-                    showingSettings = true
-                }
-                .keyboardShortcut(",", modifiers: .command)
-            }
-            
-            CommandMenu("Audio") {
-                Button("Refresh Audio Devices") {
-                    audioDeviceVM.refreshDevices()
-                }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
-                
-                Button("Auto Map Channels") {
-                    audioDeviceVM.autoMapChannelsAction()
-                }
-                .disabled(audioDeviceVM.selectedInputDevice == nil || audioDeviceVM.selectedOutputDevice == nil)
-            }
-            
-            CommandMenu("Recording") {
-                Button("Start Recording") {
-                    // This would trigger recording from menu
-                }
-                .disabled(processingVM.isRunning)
-                .keyboardShortcut("r", modifiers: .command)
-                
-                Button("Stop Recording") {
-                    processingVM.cancel()
-                }
-                .disabled(!processingVM.isRunning)
-                .keyboardShortcut(".", modifiers: .command)
-                
-                Divider()
-                
-                Button("Open Recording Directory") {
-                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspaceManager.currentWorkspace.path)
-                }
-                .keyboardShortcut("o", modifiers: [.command, .shift])
-            }
-            
-            CommandMenu("Workspace") {
-                Button("New Workspace") {
-                    workspaceManager.createNewWorkspace()
-                }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
-                
-                Button("Export Workspace") {
-                    exportCurrentWorkspace()
-                }
-                .disabled(!workspaceManager.hasRecordings && !workspaceManager.hasProcessedData)
-                .keyboardShortcut("e", modifiers: [.command, .shift])
-                
-                Divider()
-                
-                Button("Clear Workspace") {
-                    clearCurrentWorkspace()
-                }
-                .keyboardShortcut("k", modifiers: [.command, .shift])
             }
         }
     }
@@ -223,7 +125,7 @@ struct EarprintApp: App {
             WorkspaceView()
                 .environmentObject(workspaceManager)
         case .postProcessing:
-            PostProcessingView(viewModel: processingVM,
+            PostProcessingView(processingVM: processingVM,
                                measurementDir: $measurementDir,
                                testSignal: $testSignal)
             .environmentObject(workspaceManager)
@@ -308,43 +210,10 @@ struct EarprintApp: App {
     }
 }
 
-// MARK: - Welcome View
-struct WelcomeView: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "waveform.circle")
-                .font(.system(size: 80))
-                .foregroundColor(.accentColor)
-            
-            Text("Welcome to Earprint")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-            
-            Text("Create personalized binaural room impulse responses for immersive headphone audio")
-                .font(.title3)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("• Select Recording from the sidebar to start")
-                Text("• Manage files in Workspace")
-                Text("• Configure audio devices in Settings")
-                Text("• View results in Visualization")
-                Text("• Use keyboard shortcuts for quick navigation")
-            }
-            .font(.body)
-            .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: 600)
-        .padding()
-    }
-}
-
 // MARK: - Section Enum
 enum Section: String, CaseIterable, Identifiable {
-    case recording = "Recording"
     case workspace = "Workspace"
+    case recording = "Recording"
     case postProcessing = "Post-Processing"
     case visualization = "Visualization"
     
