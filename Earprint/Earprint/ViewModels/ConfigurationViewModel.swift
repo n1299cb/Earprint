@@ -462,6 +462,26 @@ final class ConfigurationViewModel: ObservableObject {
     // MARK: - Private Methods
     private func validatePath(_ path: String) -> Bool {
         guard !path.isEmpty else { return true } // Empty paths are valid (use defaults)
+        
+        // Check if the path is within the app's workspace directory
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let workspacesDir = appSupport.appendingPathComponent("Earprint/Workspaces")
+        
+        let pathURL = URL(fileURLWithPath: path)
+        
+        // If it's a workspace path, try to create it if it doesn't exist
+        if pathURL.path.hasPrefix(workspacesDir.path) {
+            do {
+                // Try to create the directory if it doesn't exist
+                try FileManager.default.createDirectory(at: pathURL, withIntermediateDirectories: true)
+                return true
+            } catch {
+                // If creation fails, check if it exists
+                return FileManager.default.fileExists(atPath: path)
+            }
+        }
+        
+        // For non-workspace paths, just check existence
         return FileManager.default.fileExists(atPath: path)
     }
     

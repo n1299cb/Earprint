@@ -153,10 +153,12 @@ struct SettingsView: View {
         }
         .onChange(of: audioDeviceVM.selectedOutputDevice) { _ in
             updateChannelWarning()
+            validateConfiguration()
             if autoSaveConfiguration { saveSettings() }
         }
         .onChange(of: audioDeviceVM.selectedInputDevice) { _ in
             updateChannelWarning()
+            validateConfiguration()
             if autoSaveConfiguration { saveSettings() }
         }
         .onChange(of: selectedLayout) { _ in
@@ -164,9 +166,11 @@ struct SettingsView: View {
             if autoSaveConfiguration { saveSettings() }
         }
         .onChange(of: defaultMeasurementDir) { _ in
+            validateConfiguration()
             if autoSaveConfiguration { saveSettings() }
         }
         .onChange(of: defaultTestSignal) { _ in
+            validateConfiguration()
             if autoSaveConfiguration { saveSettings() }
         }
         .onChange(of: workspaceManager.currentWorkspace) { _ in

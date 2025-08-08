@@ -642,28 +642,47 @@ struct RecordingConfigurationSection: View {
                     Label("Test Signal", systemImage: "waveform")
                         .font(.headline)
                     
-                    HStack {
-                        TextField("Select test signal file...", text: $testSignalPath)
-                            .textFieldStyle(.roundedBorder)
-                        
-                        Button("Browse") {
-                            showingTestSignalPicker = true
+                    // Check if test signal is bundled and valid
+                    let isBundledSignal = !testSignalPath.isEmpty &&
+                        (testSignalPath.contains("/Scripts/data/") ||
+                         testSignalPath.contains("Bundle.main"))
+                    let isValidSignal = !testSignalPath.isEmpty &&
+                        FileManager.default.fileExists(atPath: testSignalPath)
+                    
+                    if isBundledSignal && isValidSignal {
+                        // For valid bundled signals, only show the Browse button
+                        HStack {
+                            Spacer()
+                            Button("Browse") {
+                                showingTestSignalPicker = true
+                            }
+                            .buttonStyle(.bordered)
                         }
-                        .buttonStyle(.bordered)
-                        
-                        // Remove test signals menu for now - implement when WorkspaceManager has this property
-                        // if !workspaceManager.testSignals.isEmpty {
-                        //     Menu("Presets") {
-                        //         ForEach(workspaceManager.testSignals) { signal in
-                        //             Button(signal.name) {
-                        //                 if let path = workspaceManager.copyTestSignalToWorkspace(signal) {
-                        //                     testSignalPath = path
-                        //                 }
-                        //             }
-                        //         }
-                        //     }
-                        //     .buttonStyle(.bordered)
-                        // }
+                    } else {
+                        // For custom or missing signals, show the full TextField interface
+                        HStack {
+                            TextField("Select test signal file...", text: $testSignalPath)
+                                .textFieldStyle(.roundedBorder)
+                            
+                            Button("Browse") {
+                                showingTestSignalPicker = true
+                            }
+                            .buttonStyle(.bordered)
+                            
+                            // Remove test signals menu for now - implement when WorkspaceManager has this property
+                            // if !workspaceManager.testSignals.isEmpty {
+                            //     Menu("Presets") {
+                            //         ForEach(workspaceManager.testSignals) { signal in
+                            //             Button(signal.name) {
+                            //                 if let path = workspaceManager.copyTestSignalToWorkspace(signal) {
+                            //                     testSignalPath = path
+                            //                 }
+                            //             }
+                            //         }
+                            //     }
+                            //     .buttonStyle(.bordered)
+                            // }
+                        }
                     }
                     
                     if !testSignalPath.isEmpty {

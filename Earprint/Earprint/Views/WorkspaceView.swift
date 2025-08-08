@@ -80,7 +80,7 @@ struct WorkspaceView: View {
         .navigationTitle("Workspace")
         .sheet(isPresented: $showingNewWorkspaceSheet) {
             newWorkspaceSheet
-                .frame(width: 500, height: 400)
+                .frame(minWidth: 600, minHeight: 500)
         }
     }
     
@@ -109,7 +109,7 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $showingNewWorkspaceSheet) {
             newWorkspaceSheet
-                .frame(width: 500, height: 400)
+                .frame(width: 600, height: 500)
         }
         .sheet(isPresented: $showingWorkspaceList) {
             workspaceListSheet
@@ -273,7 +273,8 @@ struct WorkspaceView: View {
                             onDelete: { workspaceManager.deleteWorkspace(workspace) },
                             onRename: workspace.isCurrent ? { newName in
                                 workspaceManager.renameCurrentWorkspace(to: newName)
-                            } : nil
+                            } : nil,
+                            canSwitchOrDelete: workspaceManager.availableWorkspaces.count > 1
                         )
                     }
                     
@@ -449,7 +450,8 @@ struct WorkspaceView: View {
                         onDelete: { workspaceManager.deleteWorkspace(workspace) },
                         onRename: workspace.isCurrent ? { newName in
                             workspaceManager.renameCurrentWorkspace(to: newName)
-                        } : nil
+                        } : nil,
+                        canSwitchOrDelete: workspaceManager.availableWorkspaces.count > 1
                     )
                 }
             }
@@ -462,6 +464,7 @@ struct WorkspaceView: View {
                 }
             }
         }
+        .frame(minWidth: 500, minHeight: 400) // Add explicit frame sizing
     }
     
     // MARK: - Helper Functions
@@ -606,6 +609,7 @@ struct WorkspaceRow: View {
     let onSwitch: () -> Void
     let onDelete: () -> Void
     let onRename: ((String) -> Void)?
+    let canSwitchOrDelete: Bool
     
     @State private var showingRenameAlert = false
     @State private var newName = ""
@@ -646,11 +650,13 @@ struct WorkspaceRow: View {
                     Button("Switch", action: onSwitch)
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
+                        .disabled(!canSwitchOrDelete)
                     
                     Button("Delete", action: onDelete)
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
                         .foregroundColor(.red)
+                        .disabled(!canSwitchOrDelete)
                 }
             }
         }

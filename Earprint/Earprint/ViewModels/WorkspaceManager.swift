@@ -79,12 +79,90 @@ class WorkspaceManager: ObservableObject {
             print("Failed to create workspace directories: \(error)")
         }
         
+        // Cleanup Empty workspaces on Boot
+        cleanupEmptyWorkspacesOnBoot()
+        
         // Load workspaces and test signals after everything is set up
         loadAvailableWorkspaces()
         loadAvailableTestSignals()
     }
     
     // MARK: - Workspace Operations
+    
+    /// Check if workspace contains audio files
+    private func workspaceContainsAudio(_ workspaceURL: URL) -> Bool {
+        let fileManager = FileManager.default
+        let audioExtensions = ["wav", "aiff", "flac", "mp3", "m4a"]
+        
+        guard let enumerator = fileManager.enumerator(at: workspaceURL, includingPropertiesForKeys: [.isRegularFileKey]) else {
+            return false
+        }
+        
+        for case let fileURL as URL in enumerator {
+            if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
+                return true
+            }
+        }
+        
+        return false
+    }
+    
+    /// Check if workspace contains audio files or was recently created
+    private func shouldPreserveWorkspace(_ workspaceURL: URL) -> Bool {
+        // Always preserve current workspace
+        if workspaceURL == currentWorkspace {
+            return true
+        }
+        
+        // Check if workspace contains audio
+        if workspaceContainsAudio(workspaceURL) {
+            return true
+        }
+        
+        // Preserve recently created workspaces (within last 5 minutes)
+        do {
+            let resourceValues = try workspaceURL.resourceValues(forKeys: [.creationDateKey])
+            if let creationDate = resourceValues.creationDate {
+                let timeSinceCreation = Date().timeIntervalSince(creationDate)
+                if timeSinceCreation < 300 { // 5 minutes
+                    return true
+                }
+            }
+        } catch {
+            // If we can't get creation date, preserve it to be safe
+            return true
+        }
+        
+        return false
+    }
+    
+    /// Delete workspaces that don't contain audio files on boot
+    func cleanupEmptyWorkspacesOnBoot() {
+        let fileManager = FileManager.default
+        
+        do {
+            let workspaceContents = try fileManager.contentsOfDirectory(at: workspacesDirectory, includingPropertiesForKeys: [.creationDateKey])
+            
+            for workspaceURL in workspaceContents {
+                guard workspaceURL.hasDirectoryPath else { continue }
+                
+                if !shouldPreserveWorkspace(workspaceURL) {
+                    do {
+                        try fileManager.removeItem(at: workspaceURL)
+                        print("Deleted empty workspace: \(workspaceURL.lastPathComponent)")
+                    } catch {
+                        print("Failed to delete workspace \(workspaceURL.lastPathComponent): \(error)")
+                    }
+                }
+            }
+            
+            // Reload available workspaces after cleanup
+            loadAvailableWorkspaces()
+            
+        } catch {
+            print("Failed to cleanup empty workspaces: \(error)")
+        }
+    }
     
     /// Clear all files in the current workspace
     func clearCurrentWorkspace() throws {

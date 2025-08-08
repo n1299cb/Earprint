@@ -118,7 +118,7 @@ struct ChannelMappingView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 
-                Picker("Test Signal", selection: $useTone) {
+                Picker("", selection: $useTone) {
                     Text("Tone").tag(true)
                     Text("Noise").tag(false)
                 }
