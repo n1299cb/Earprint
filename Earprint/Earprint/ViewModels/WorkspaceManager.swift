@@ -18,6 +18,9 @@ class WorkspaceManager: ObservableObject {
     private let bundledScriptsURL: URL?
     private let bundledDataURL: URL?
     
+    // Cleanup Status Variable
+    private var isCleaningUp = false
+    
     // MARK: - Computed Properties
     var workspacesDirectory: URL {
         appSupportURL.appendingPathComponent(workspacesDirectoryName)
@@ -95,44 +98,45 @@ class WorkspaceManager: ObservableObject {
         let audioExtensions = ["wav", "aiff", "flac", "mp3", "m4a"]
         
         guard let enumerator = fileManager.enumerator(at: workspaceURL, includingPropertiesForKeys: [.isRegularFileKey]) else {
+            print("Failed to enumerate files in \(workspaceURL.lastPathComponent)")
             return false
         }
         
         for case let fileURL as URL in enumerator {
             if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
+                print("Found audio file in \(workspaceURL.lastPathComponent): \(fileURL.lastPathComponent)")
                 return true
             }
         }
         
+        print("No audio files found in \(workspaceURL.lastPathComponent)")
         return false
     }
     
-    /// Check if workspace contains audio files or was recently created
-    private func shouldPreserveWorkspace(_ workspaceURL: URL) -> Bool {
-        // Always preserve current workspace
-        if workspaceURL == currentWorkspace {
-            return true
+    /// Check if workspace contains any files
+    private func workspaceHasFiles(_ workspaceURL: URL) -> Bool {
+        let fileManager = FileManager.default
+        
+        guard let enumerator = fileManager.enumerator(at: workspaceURL, includingPropertiesForKeys: [.isRegularFileKey]) else {
+            print("Failed to enumerate files in \(workspaceURL.lastPathComponent)")
+            return false
         }
         
-        // Check if workspace contains audio
-        if workspaceContainsAudio(workspaceURL) {
-            return true
-        }
-        
-        // Preserve recently created workspaces (within last 5 minutes)
-        do {
-            let resourceValues = try workspaceURL.resourceValues(forKeys: [.creationDateKey])
-            if let creationDate = resourceValues.creationDate {
-                let timeSinceCreation = Date().timeIntervalSince(creationDate)
-                if timeSinceCreation < 300 { // 5 minutes
+        for case let fileURL as URL in enumerator {
+            do {
+                let resourceValues = try fileURL.resourceValues(forKeys: [.isRegularFileKey])
+                if resourceValues.isRegularFile == true {
+                    print("Found file in \(workspaceURL.lastPathComponent): \(fileURL.lastPathComponent)")
                     return true
                 }
+            } catch {
+                // If we can't read the file, assume it exists to be safe
+                print("Could not check file \(fileURL.lastPathComponent), assuming workspace has content")
+                return true
             }
-        } catch {
-            // If we can't get creation date, preserve it to be safe
-            return true
         }
         
+        print("No files found in \(workspaceURL.lastPathComponent)")
         return false
     }
     
@@ -146,13 +150,24 @@ class WorkspaceManager: ObservableObject {
             for workspaceURL in workspaceContents {
                 guard workspaceURL.hasDirectoryPath else { continue }
                 
-                if !shouldPreserveWorkspace(workspaceURL) {
-                    do {
-                        try fileManager.removeItem(at: workspaceURL)
-                        print("Deleted empty workspace: \(workspaceURL.lastPathComponent)")
-                    } catch {
-                        print("Failed to delete workspace \(workspaceURL.lastPathComponent): \(error)")
-                    }
+                // Skip current workspace (the newly created one)
+                if workspaceURL == currentWorkspace {
+                    print("Preserving current workspace: \(workspaceURL.lastPathComponent)")
+                    continue
+                }
+                
+                // Check if workspace has any files
+                if workspaceHasFiles(workspaceURL) {
+                    print("Preserving workspace with files: \(workspaceURL.lastPathComponent)")
+                    continue
+                }
+                
+                // Only delete if it's empty AND not the current workspace
+                do {
+                    try fileManager.removeItem(at: workspaceURL)
+                    print("Deleted empty workspace: \(workspaceURL.lastPathComponent)")
+                } catch {
+                    print("Failed to delete workspace \(workspaceURL.lastPathComponent): \(error)")
                 }
             }
             
@@ -330,6 +345,11 @@ class WorkspaceManager: ObservableObject {
         workspaceName = workspaceInfo.name
         
         print("Switched to workspace: \(workspaceInfo.name)")
+        
+        // Reload available workspaces to update isCurrent flags
+        if !isCleaningUp {
+            loadAvailableWorkspaces()
+        }
         
         // Trigger UI refresh only once at the end
         objectWillChange.send()

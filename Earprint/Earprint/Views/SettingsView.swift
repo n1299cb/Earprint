@@ -71,7 +71,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 200)
             
         } detail: {
             // Detail View
@@ -91,25 +91,27 @@ struct SettingsView: View {
             }
             .navigationTitle(selectedTab.rawValue)
             .navigationSplitViewColumnWidth(min: 500, ideal: 700)
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                HStack {
-                    if !configurationIssues.isEmpty {
-                        Button(action: { validateAndCleanup() }) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .foregroundColor(.orange)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItemGroup(placement: .primaryAction) {
+                    HStack {
+                        if !configurationIssues.isEmpty {
+                            Button(action: { validateAndCleanup() }) {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .foregroundColor(.orange)
+                            }
+                            .help("Configuration issues detected")
                         }
-                        .help("Configuration issues detected")
                     }
-                    
-                    Button("Reset to Defaults") {
-                        showingResetAlert = true
-                    }
-                    .buttonStyle(.bordered)
                 }
             }
         }
+
         .alert("Reset Settings", isPresented: $showingResetAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Reset", role: .destructive) {

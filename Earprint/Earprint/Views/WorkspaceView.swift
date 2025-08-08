@@ -438,7 +438,7 @@ struct WorkspaceView: View {
     // MARK: - Workspace List Sheet
     
     private var workspaceListSheet: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 ForEach(workspaceManager.availableWorkspaces) { workspace in
                     WorkspaceRow(
@@ -457,6 +457,11 @@ struct WorkspaceView: View {
             }
             .navigationTitle("All Workspaces")
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        showingWorkspaceList = false
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button("Done") {
                         showingWorkspaceList = false

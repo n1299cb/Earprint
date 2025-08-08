@@ -106,6 +106,7 @@ struct EarprintApp: App {
                     }
                     NSApplication.shared.terminate(nil)
                 }
+                .keyboardShortcut("Q", modifiers: .command)
             }
         }
     }
@@ -130,9 +131,9 @@ struct EarprintApp: App {
                                testSignal: $testSignal)
             .environmentObject(workspaceManager)
         case .visualization:
-            VisualizationView(processingVM: processingVM)
-                .environmentObject(configurationVM)
-                .environmentObject(workspaceManager)
+            FrequencyVisualizationView(measurementDir: $measurementDir)
+                        .environmentObject(configurationVM)
+                        .environmentObject(workspaceManager)
         }
     }
     
