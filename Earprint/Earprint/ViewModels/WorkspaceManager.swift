@@ -73,7 +73,7 @@ class WorkspaceManager: ObservableObject {
         self.currentWorkspace = defaultWorkspaceURL
         self.workspaceName = defaultName
         
-        // Now that all stored properties are initialized, we can create directories
+        // Create directories
         do {
             try fileManager.createDirectory(at: workspacesDirectoryURL, withIntermediateDirectories: true)
             try fileManager.createDirectory(at: defaultWorkspaceURL, withIntermediateDirectories: true)
@@ -82,12 +82,35 @@ class WorkspaceManager: ObservableObject {
             print("Failed to create workspace directories: \(error)")
         }
         
-        // Cleanup Empty workspaces on Boot
-        cleanupEmptyWorkspacesOnBoot()
-        
-        // Load workspaces and test signals after everything is set up
+        // Load existing workspaces first to see if we have any
         loadAvailableWorkspaces()
-        loadAvailableTestSignals()
+        print("DEBUG: After initial load, found \(availableWorkspaces.count) workspaces")
+
+        // Check if there are existing workspaces with content
+        let workspacesWithContent = availableWorkspaces.filter { workspace in
+            workspaceHasFiles(workspace.url)
+        }
+
+        if let mostRecentWorkspaceWithContent = workspacesWithContent.first {
+            print("DEBUG: Switching to existing workspace with content: \(mostRecentWorkspaceWithContent.name)")
+            currentWorkspace = mostRecentWorkspaceWithContent.url
+            workspaceName = mostRecentWorkspaceWithContent.name
+            
+            // Remove the newly created empty workspace since we're using an existing one
+            do {
+                try fileManager.removeItem(at: defaultWorkspaceURL)
+                print("DEBUG: Removed unused default workspace")
+            } catch {
+                print("Failed to remove unused default workspace: \(error)")
+            }
+        } else {
+            print("DEBUG: No existing workspaces with content found, keeping new workspace: \(defaultName)")
+        }
+
+        print("DEBUG: Current workspace before cleanup: \(currentWorkspace.lastPathComponent)")
+
+        // NOW do cleanup after current workspace is finalized
+        cleanupEmptyWorkspacesOnBoot()
     }
     
     // MARK: - Workspace Operations
@@ -150,8 +173,8 @@ class WorkspaceManager: ObservableObject {
             for workspaceURL in workspaceContents {
                 guard workspaceURL.hasDirectoryPath else { continue }
                 
-                // Skip current workspace (the newly created one)
-                if workspaceURL == currentWorkspace {
+                // Skip current workspace using path comparison instead of URL comparison
+                if workspaceURL.path == currentWorkspace.path {
                     print("Preserving current workspace: \(workspaceURL.lastPathComponent)")
                     continue
                 }
