@@ -38,6 +38,7 @@ struct ProcessingConfiguration {
     let roomTarget: String
     let micCalibration: String
     let interactiveDelays: Bool
+    let createHesuvi: Bool
     
     // NEW: Missing properties that were referenced in buildProcessingArgs
     let outputSampleRate: String?

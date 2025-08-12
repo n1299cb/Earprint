@@ -55,6 +55,7 @@ def main(
     x_curve_type=X_CURVE_DEFAULT_TYPE,
     interactive_delays=False,
     delay_file=None,
+    create_hesuvi=False,
 ):
     """"""
     if dir_path is None or not os.path.isdir(dir_path):
@@ -242,11 +243,13 @@ def main(
     print("Writing BRIRs...")
     hrir.write_wav(os.path.join(dir_path, "hrir.wav"), comment=metadata_comment)
 
-    # Write multi-channel WAV file with HeSuVi track order
-    hrir.write_wav(
-        os.path.join(dir_path, "hesuvi.wav"),
-        track_order=HESUVI_TRACK_ORDER,
-        comment=metadata_comment,
+    # Write multi-channel WAV file with HeSuVi track order (only if requested)
+    if create_hesuvi:
+        print("Writing HeSuVi format...")
+        hrir.write_wav(
+            os.path.join(dir_path, "hesuvi.wav"),
+            track_order=HESUVI_TRACK_ORDER,
+            comment=metadata_comment,
     )
 
     print(readme)
@@ -647,6 +650,11 @@ def create_cli():
     )
     arg_parser.add_argument(
         "--hangloose", action="store_true", help="Create Hangloose files per channel (left/right WAV per speaker)"
+    )
+    arg_parser.add_argument(
+        "--create_hesuvi",
+        action="store_true",
+        help="Generate hesuvi.wav output file for HeSuVi compatibility."
     )
     arg_parser.add_argument("--dir_path", type=str, required=True, help="Path to directory for recordings and outputs.")
     arg_parser.add_argument(

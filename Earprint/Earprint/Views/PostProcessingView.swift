@@ -36,6 +36,9 @@ struct PostProcessingView: View {
     @State private var genericLimit: String = ""
     @State private var frCombinationMethod: String = "average"
     
+    // Advanced Features
+    @State private var createHesuvi: Bool = false
+    
     // Output Settings
     @State private var outputSampleRate: String = ""
     @State private var generatePlots: Bool = true
@@ -189,7 +192,7 @@ struct PostProcessingView: View {
                                 ProgressView()
                                     .scaleEffect(0.7)
                             }
-                            Text(processingVM.isRunning ? "Processing..." : "Start Post-Processing")
+                            Text(processingVM.isRunning ? "Processing..." : "Process")
                         }
                     }
                     .disabled(!canProcess || processingVM.isRunning)
@@ -562,6 +565,8 @@ struct PostProcessingView: View {
                     }
                     
                     Toggle("Interactive Speaker Delays", isOn: $interactiveDelays)
+                    Toggle("Create HeSuVi HRIR", isOn: $createHesuvi)
+                        .help("Generate hesuvi.wav file for use with HeSuVi and other headphone virtualization software")
                 }
             }
             .padding(.top, 8)
@@ -722,7 +727,7 @@ struct PostProcessingView: View {
             roomTarget: roomTarget,
             micCalibration: micCalibration,
             interactiveDelays: interactiveDelays,
-            // NEW: Add the missing properties
+            createHesuvi: createHesuvi,
             outputSampleRate: outputSampleRate.isEmpty ? nil : outputSampleRate,
             generatePlots: generatePlots,
             exportCSV: exportCSV

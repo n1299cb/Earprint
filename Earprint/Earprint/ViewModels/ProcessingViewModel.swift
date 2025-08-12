@@ -249,6 +249,11 @@ final class ProcessingViewModel: ObservableObject {
             args.append("--interactive_delays")
         }
         
+        // Create HESUVI HRIR
+        if config.createHesuvi {
+            args.append("--create_hesuvi")
+        }
+        
         // Output settings
         if let sampleRate = config.outputSampleRate, !sampleRate.isEmpty {
             args += ["--fs", sampleRate]
