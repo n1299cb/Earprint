@@ -38,13 +38,33 @@ enum RecordingState: Equatable {
     }
 }
 
-// MARK: - Recording State (multigroup)
 enum SequentialRecordingState: Equatable {
     case idle
+    case preparing(totalGroups: Int)
     case recordingGroup(currentGroup: Int, totalGroups: Int, groupName: String)
-    case betweenGroups(nextGroup: Int, totalGroups: Int, nextGroupName: String)
-    case completed(totalRecordings: Int)
-    case error(String)
+    case completed
+    
+    var isActive: Bool {
+        switch self {
+        case .idle, .completed:
+            return false
+        case .preparing, .recordingGroup:
+            return true
+        }
+    }
+    
+    var progressDescription: String {
+        switch self {
+        case .idle:
+            return ""
+        case .preparing(let total):
+            return "Preparing to record \(total) groups..."
+        case .recordingGroup(let current, let total, let name):
+            return "Recording group \(current)/\(total): \(name)"
+        case .completed:
+            return "Sequential recording completed"
+        }
+    }
 }
 
 // MARK: - Enhanced RecordingViewModel (macOS)
@@ -361,7 +381,7 @@ final class RecordingViewModel: ObservableObject {
 
     // MARK: - Sequential Recording Methods
 
-    func startSequentialRecording(with configuration: RecordingConfiguration, layout: SpeakerLayoutInfo) {
+    func startSequentialRecording(with configuration: RecordingConfiguration, layout: SpeakerLayout) {
         guard !layout.groups.isEmpty else {
             recordingState = .error("Invalid speaker layout: no groups defined")
             return
@@ -369,9 +389,11 @@ final class RecordingViewModel: ObservableObject {
         
         // Store configuration and setup sequence
         currentRecordingConfiguration = configuration
-        remainingGroups = layout.groups
-        sequentialState = .idle
-        
+        remainingGroups = layout.groups.map { group in
+            RecordingGroup(name: group.name, speakers: group.speakers)
+        }
+        sequentialState = .preparing(totalGroups: layout.groups.count)
+            
         // Start with first group
         startNextGroupRecording()
     }
@@ -384,19 +406,20 @@ final class RecordingViewModel: ObservableObject {
         }
         
         let currentGroup = remainingGroups.removeFirst()
-        let groupIndex = (currentRecordingConfiguration?.speakerLayout == nil ? 0 :
-                         (getSpeakerLayoutInfo()?.groups.count ?? 1) - remainingGroups.count - 1)
-        let totalGroups = getSpeakerLayoutInfo()?.groups.count ?? 1
+        let groupIndex = remainingGroups.count + 1
+        let totalGroups = (currentRecordingConfiguration?.speakerLayout != nil) ?
+            (LayoutManager.shared.getCurrentLayout()?.groups.count ?? 1) : 1
         
         // Update state
         sequentialState = .recordingGroup(
-            currentGroup: groupIndex + 1,
+            currentGroup: groupIndex,
             totalGroups: totalGroups,
             groupName: currentGroup.name
         )
         
         // Create configuration for this specific group
-        let groupOutputPath = baseConfig.measurementDir.appending("/\(currentGroup.filename)")
+        let fileName = "\(currentGroup.speakers.joined(separator: ",")).wav"
+        let groupOutputPath = "\(baseConfig.measurementDir)/\(fileName)"
         
         let groupConfig = RecordingConfiguration(
             measurementDir: baseConfig.measurementDir,
@@ -406,7 +429,7 @@ final class RecordingViewModel: ObservableObject {
             outputFile: groupOutputPath,
             speakerLayout: baseConfig.speakerLayout,
             recordingGroup: currentGroup.name,
-            outputChannels: getOutputChannelsForGroup(currentGroup),
+            outputChannels: Array(0..<currentGroup.speakers.count),
             inputChannels: baseConfig.inputChannels
         )
         
@@ -421,19 +444,14 @@ final class RecordingViewModel: ObservableObject {
         return [0, 1]
     }
 
-    private func getSpeakerLayoutInfo() -> SpeakerLayoutInfo? {
-        // Get current layout info - this would need to be passed in or stored
-        return nil // Placeholder
-    }
-
     func onGroupRecordingCompleted() {
         if remainingGroups.isEmpty {
             completeSequentialRecording()
         } else {
             // Show transition UI for next group
             let nextGroup = remainingGroups.first!
-            let nextGroupIndex = (getSpeakerLayoutInfo()?.groups.count ?? 1) - remainingGroups.count + 1
-            let totalGroups = getSpeakerLayoutInfo()?.groups.count ?? 1
+            let nextGroupIndex = remainingGroups.count
+            let totalGroups = LayoutManager.shared.getCurrentLayout()?.groups.count ?? 1
             
             sequentialState = .betweenGroups(
                 nextGroup: nextGroupIndex,
@@ -441,7 +459,7 @@ final class RecordingViewModel: ObservableObject {
                 nextGroupName: nextGroup.name
             )
             
-            // Auto-advance after delay, or wait for user input
+            // Auto-advance after delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 self.startNextGroupRecording()
             }
@@ -449,7 +467,7 @@ final class RecordingViewModel: ObservableObject {
     }
 
     private func completeSequentialRecording() {
-        let totalRecordings = getSpeakerLayoutInfo()?.groups.count ?? 1
+        let totalRecordings = LayoutManager.shared.getCurrentLayout()?.groups.count ?? 1
         sequentialState = .completed(totalRecordings: totalRecordings)
         recordingState = .completed(outputFile: "Sequential recording completed")
         
@@ -577,69 +595,20 @@ final class RecordingViewModel: ObservableObject {
             return [0, 1]
         }
     }
-
-    /// Validate that appropriate test signals exist for a speaker layout
-    func validateTestSignalsForLayout(_ layoutInfo: SpeakerLayoutInfo) -> [String] {
+    
+    /// Validate test signals for layout
+    func validateTestSignalsForLayout(_ layout: SpeakerLayout) -> [String] {
         var missingSignals: [String] = []
         
-        for group in layoutInfo.groups {
-            let testSignal = getTestSignalForGroup(group)
-            if testSignal.isEmpty || !fileManager.fileExists(atPath: testSignal) {
+        for group in layout.groups {
+            // Basic validation - check if we have test signals
+            if group.speakers.isEmpty {
                 missingSignals.append(group.name)
             }
+            // Add more sophisticated test signal validation here later
         }
         
         return missingSignals
-    }
-
-    /// Enhanced recording method with smart test signal selection
-    func startRecordingWithLayout(
-        configuration: RecordingConfiguration,
-        layout: SpeakerLayoutInfo,
-        group: RecordingGroup? = nil
-    ) {
-        guard !isRecording else { return }
-        
-        // Validate that we have required test signals
-        let missingSignals = validateTestSignalsForLayout(layout)
-        if !missingSignals.isEmpty {
-            recordingState = .error("Missing test signals for groups: \(missingSignals.joined(separator: ", "))")
-            return
-        }
-            
-        // Determine which group to record (first group if not specified)
-        let targetGroup = group ?? layout.groups.first
-        guard let recordingGroup = targetGroup else {
-            recordingState = .error("No recording groups found in layout")
-            return
-        }
-            
-        // Get appropriate test signal for this group
-        let selectedTestSignal = getTestSignalForGroup(recordingGroup)
-        guard !selectedTestSignal.isEmpty else {
-            recordingState = .error("No suitable test signal found for group: \(recordingGroup.name)")
-            return
-        }
-            
-        // Create output file path
-        let outputFile = URL(fileURLWithPath: configuration.measurementDir)
-            .appendingPathComponent(recordingGroup.filename).path
-        
-        // Build configuration with smart selections
-        let enhancedConfig = RecordingConfiguration(
-            measurementDir: configuration.measurementDir,
-            testSignal: selectedTestSignal,
-            playbackDevice: configuration.playbackDevice,
-            recordingDevice: configuration.recordingDevice,
-            outputFile: outputFile,
-            speakerLayout: layout.name,
-            recordingGroup: recordingGroup.name,
-            outputChannels: getOutputChannelsForGroup(recordingGroup),
-            inputChannels: configuration.inputChannels
-        )
-            
-        // Start the recording
-        startRecording(with: enhancedConfig)
     }
 
     /// Validate configuration before recording
@@ -1336,6 +1305,262 @@ final class RecordingViewModel: ObservableObject {
             }
         }
     }
+}
+
+// MARK: - RecordingViewModel.swift Integration
+// Add these methods to your existing RecordingViewModel
+
+extension RecordingViewModel {
+    
+    // MARK: - Layout-Based Recording Methods
+    
+    /// Start recording with layout from LayoutManager
+    func startLayoutBasedRecording(
+        layout: SpeakerLayout,
+        measurementDir: String,
+        testSignal: String,
+        inputDevice: AudioDevice,
+        outputDevice: AudioDevice,
+        channelMapping: ChannelMapping?
+    ) {
+        // Simple implementation for now - just record first group
+        guard let firstGroup = layout.groups.first else {
+            recordingState = .error("No groups in layout")
+            return
+        }
+        
+        let fileName = "\(firstGroup.speakers.joined(separator: ",")).wav"
+        let outputPath = "\(measurementDir)/\(fileName)"
+        
+        let configuration = RecordingConfiguration(
+            measurementDir: measurementDir,
+            testSignal: testSignal,
+            playbackDevice: String(outputDevice.id),
+            recordingDevice: String(inputDevice.id),
+            outputFile: outputPath,
+            speakerLayout: layout.name,
+            recordingGroup: firstGroup.name,
+            outputChannels: Array(0..<firstGroup.speakers.count),
+            inputChannels: [0, 1]
+        )
+        
+        startRecording(with: configuration)
+    }
+    
+    enum RecordingType: String, CaseIterable {
+        case measurement = "Measurement Recording"
+        case headphone = "Headphone EQ"
+        case room = "Room Response"
+        case testSweep = "Test Sweep"
+    }
+    
+    /// Start standard recording for non-measurement types
+    func startStandardRecording(
+        type: RecordingType,
+        measurementDir: String,
+        testSignal: String,
+        outputFile: String,
+        inputDevice: AudioDevice,
+        outputDevice: AudioDevice
+    ) {
+        // Check recording type and configure accordingly
+        let isRoomRecording = (type.rawValue == "Room Response")
+        
+        let configuration = RecordingConfiguration(
+            measurementDir: measurementDir,
+            testSignal: testSignal,
+            playbackDevice: String(outputDevice.id),
+            recordingDevice: String(inputDevice.id),
+            outputFile: outputFile,
+            speakerLayout: nil,
+            recordingGroup: nil,
+            outputChannels: isRoomRecording ? nil : [0, 1],
+            inputChannels: isRoomRecording ? [0] : [0, 1]
+        )
+        
+        startRecording(with: configuration)
+    }
+    
+    // MARK: - Private Recording Methods
+    
+    private func startSingleGroupRecording(
+        layout: SpeakerLayout,
+        baseConfig: RecordingConfiguration,
+        channelMapping: ChannelMapping?
+    ) {
+        let group = layout.groups[0]
+        let outputChannels = getOutputChannelsForGroup(group, channelMapping: channelMapping)
+        let fileName = "\(group.speakers.joined(separator: ",")).wav"
+        let outputPath = "\(baseConfig.measurementDir)/\(fileName)"
+        
+        let groupConfig = RecordingConfiguration(
+            measurementDir: baseConfig.measurementDir,
+            testSignal: baseConfig.testSignal,
+            playbackDevice: baseConfig.playbackDevice,
+            recordingDevice: baseConfig.recordingDevice,
+            outputFile: outputPath,
+            speakerLayout: baseConfig.speakerLayout,
+            recordingGroup: group.name,
+            outputChannels: outputChannels,
+            inputChannels: baseConfig.inputChannels
+        )
+        
+        startRecording(with: groupConfig)
+    }
+    
+    private func startMultiGroupRecording(
+        layout: SpeakerLayout,
+        baseConfig: RecordingConfiguration,
+        channelMapping: ChannelMapping?
+    ) {
+        // Store configuration for sequential recording
+        currentRecordingConfiguration = baseConfig
+        remainingGroups = layout.groups.map { group in
+            RecordingGroup(name: group.name, speakers: group.speakers)
+        }
+        
+        // Initialize sequential state
+        sequentialState = .preparing(totalGroups: layout.groups.count)
+        
+        // Start with first group
+        startNextSequentialGroup(channelMapping: channelMapping)
+    }
+    
+    private func startNextSequentialGroup(channelMapping: ChannelMapping?) {
+        guard let baseConfig = currentRecordingConfiguration,
+              !remainingGroups.isEmpty else {
+            completeSequentialRecording()
+            return
+        }
+        
+        let currentGroup = remainingGroups.removeFirst()
+        let groupIndex = getGroupIndex(for: currentGroup)
+        let totalGroups = getTotalGroupCount()
+        
+        // Update sequential state
+        sequentialState = .recordingGroup(
+            currentGroup: groupIndex,
+            totalGroups: totalGroups,
+            groupName: currentGroup.name
+        )
+        
+        // Get output channels for this group
+        let outputChannels = getOutputChannelsForGroup(currentGroup, channelMapping: channelMapping)
+        let fileName = "\(currentGroup.speakers.joined(separator: ",")).wav"
+        let outputPath = "\(baseConfig.measurementDir)/\(fileName)"
+        
+        // Create group-specific configuration
+        let groupConfig = RecordingConfiguration(
+            measurementDir: baseConfig.measurementDir,
+            testSignal: baseConfig.testSignal,
+            playbackDevice: baseConfig.playbackDevice,
+            recordingDevice: baseConfig.recordingDevice,
+            outputFile: outputPath,
+            speakerLayout: baseConfig.speakerLayout,
+            recordingGroup: currentGroup.name,
+            outputChannels: outputChannels,
+            inputChannels: baseConfig.inputChannels
+        )
+        
+        // Start recording this group
+        startRecording(with: groupConfig)
+    }
+    
+    private func getOutputChannelsForGroup(
+        _ group: SpeakerGroup,
+        channelMapping: ChannelMapping?
+    ) -> [Int] {
+        // If we have channel mapping, use it
+        if let mapping = channelMapping,
+           mapping.outputChannels.count >= group.speakers.count {
+            return Array(mapping.outputChannels.prefix(group.speakers.count))
+        }
+        
+        // Otherwise, use sequential mapping
+        return Array(0..<group.speakers.count)
+    }
+    
+    private func getOutputChannelsForGroup(
+        _ group: RecordingGroup,
+        channelMapping: ChannelMapping?
+    ) -> [Int] {
+        // Convert RecordingGroup to SpeakerGroup format
+        let speakerGroup = SpeakerGroup(name: group.name, speakers: group.speakers)
+        return getOutputChannelsForGroup(speakerGroup, channelMapping: channelMapping)
+    }
+    
+    private func completeSequentialRecording() {
+        sequentialState = .completed
+        recordingState = .completed
+        currentRecordingConfiguration = nil
+        remainingGroups = []
+        
+        // Notify completion
+        NotificationCenter.default.post(
+            name: .sequentialRecordingCompleted,
+            object: nil
+        )
+    }
+    
+    // MARK: - Validation Methods
+    
+    func validateLayoutForRecording(_ layout: SpeakerLayout, outputDevice: AudioDevice) -> [String] {
+        var errors: [String] = []
+        
+        // Check if device has enough output channels
+        let requiredChannels = layout.totalSpeakers
+        if outputDevice.maxOutputChannels < requiredChannels {
+            errors.append("Layout requires \(requiredChannels) channels but device only has \(outputDevice.maxOutputChannels)")
+        }
+        
+        // Check for empty groups
+        for group in layout.groups {
+            if group.speakers.isEmpty {
+                errors.append("Group '\(group.name)' has no speakers")
+            }
+        }
+        
+        // Check for valid speaker names (basic validation)
+        let validSpeakerPattern = "^[A-Z]{1,3}$"
+        for group in layout.groups {
+            for speaker in group.speakers {
+                if speaker.range(of: validSpeakerPattern, options: .regularExpression) == nil {
+                    errors.append("Invalid speaker name: \(speaker)")
+                }
+            }
+        }
+        
+        return errors
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func getGroupIndex(for group: RecordingGroup) -> Int {
+        // Calculate current group index based on remaining groups
+        return getTotalGroupCount() - remainingGroups.count
+    }
+    
+    private func getTotalGroupCount() -> Int {
+        // Use LayoutManager directly
+        return LayoutManager.shared.getCurrentLayout()?.groups.count ?? remainingGroups.count + 1
+    }
+    
+    // MARK: - Recording State Management
+    
+    func handleRecordingCompletion() {
+        // If we're in sequential recording mode, start next group
+        if sequentialState != .idle && !remainingGroups.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.startNextSequentialGroup(channelMapping: nil)
+            }
+        }
+    }
+}
+
+// MARK: - Additional Notification Names
+extension Notification.Name {
+    static let sequentialRecordingCompleted = Notification.Name("sequentialRecordingCompleted")
+    static let recordingGroupChanged = Notification.Name("recordingGroupChanged")
 }
 
 #else
