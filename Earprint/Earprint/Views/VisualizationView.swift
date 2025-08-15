@@ -363,6 +363,11 @@ struct FrequencyVisualizationView: View {
     // MARK: - Helper Functions
     
     private func loadCSVFiles() {
+        guard !measurementDir.isEmpty else {
+            csvFiles = []
+            return
+        }
+        
         isLoading = true
         errorMessage = ""
         
@@ -373,6 +378,7 @@ struct FrequencyVisualizationView: View {
                 DispatchQueue.main.async {
                     self.csvFiles = []
                     self.isLoading = false
+                    self.errorMessage = "No plots directory found. Run post-processing with CSV export enabled."
                 }
                 return
             }

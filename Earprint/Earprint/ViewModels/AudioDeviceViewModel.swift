@@ -83,6 +83,15 @@ final class AudioDeviceViewModel: ObservableObject {
             self.inputDevices = inputs
             self.outputDevices = outputs
             
+            // Auto-select default devices if none selected
+            if selectedInputDevice == nil {
+                selectedInputDevice = inputs.first { $0.isDefaultInput } ?? inputs.first
+            }
+            
+            if selectedOutputDevice == nil {
+                selectedOutputDevice = outputs.first { $0.isDefaultOutput } ?? outputs.first
+            }
+            
             // Update selected devices if they're no longer available
             if let selected = selectedInputDevice,
                !inputs.contains(where: { $0.id == selected.id }) {

@@ -42,13 +42,15 @@ enum SequentialRecordingState: Equatable {
     case idle
     case preparing(totalGroups: Int)
     case recordingGroup(currentGroup: Int, totalGroups: Int, groupName: String)
+    case betweenGroups(nextGroup: Int, totalGroups: Int, nextGroupName: String)
     case completed
+    case error(String)
     
     var isActive: Bool {
         switch self {
-        case .idle, .completed:
+        case .idle, .completed, .error:
             return false
-        case .preparing, .recordingGroup:
+        case .preparing, .recordingGroup, .betweenGroups:
             return true
         }
     }
@@ -61,8 +63,12 @@ enum SequentialRecordingState: Equatable {
             return "Preparing to record \(total) groups..."
         case .recordingGroup(let current, let total, let name):
             return "Recording group \(current)/\(total): \(name)"
+        case .betweenGroups(let next, let total, let name):
+            return "Preparing next group \(next)/\(total): \(name)"
         case .completed:
             return "Sequential recording completed"
+        case .error(let message):
+            return "Error: \(message)"
         }
     }
 }
@@ -82,7 +88,7 @@ final class RecordingViewModel: ObservableObject {
     @Published var errorMessage: String = ""
     @Published var sequentialState: SequentialRecordingState = .idle
     @Published var currentRecordingConfiguration: RecordingConfiguration?
-    @Published var remainingGroups: [RecordingGroup] = []
+    @Published var remainingGroups: [SpeakerGroup] = []
     
     // MARK: - Computed Properties
     var recordingName: String {
@@ -389,9 +395,7 @@ final class RecordingViewModel: ObservableObject {
         
         // Store configuration and setup sequence
         currentRecordingConfiguration = configuration
-        remainingGroups = layout.groups.map { group in
-            RecordingGroup(name: group.name, speakers: group.speakers)
-        }
+        remainingGroups = layout.groups
         sequentialState = .preparing(totalGroups: layout.groups.count)
             
         // Start with first group
@@ -406,18 +410,18 @@ final class RecordingViewModel: ObservableObject {
         }
         
         let currentGroup = remainingGroups.removeFirst()
-        let groupIndex = remainingGroups.count + 1
-        let totalGroups = (currentRecordingConfiguration?.speakerLayout != nil) ?
-            (LayoutManager.shared.getCurrentLayout()?.groups.count ?? 1) : 1
+        let groupIndex = getTotalGroupCount() - remainingGroups.count
+        let totalGroups = getTotalGroupCount()
         
-        // Update state
         sequentialState = .recordingGroup(
             currentGroup: groupIndex,
             totalGroups: totalGroups,
             groupName: currentGroup.name
         )
         
-        // Create configuration for this specific group
+        // Use basic channel mapping - device compatibility handled at RecordingView level
+        let outputChannels = getOutputChannelsForGroup(currentGroup)
+        
         let fileName = "\(currentGroup.speakers.joined(separator: ",")).wav"
         let groupOutputPath = "\(baseConfig.measurementDir)/\(fileName)"
         
@@ -429,19 +433,25 @@ final class RecordingViewModel: ObservableObject {
             outputFile: groupOutputPath,
             speakerLayout: baseConfig.speakerLayout,
             recordingGroup: currentGroup.name,
-            outputChannels: Array(0..<currentGroup.speakers.count),
+            outputChannels: outputChannels,
             inputChannels: baseConfig.inputChannels
         )
         
-        // Start recording this group
         startRecording(with: groupConfig)
     }
 
-    private func getOutputChannelsForGroup(_ group: RecordingGroup) -> [Int]? {
-        // Map speaker names to output channels
-        // This would need to be implemented based on your channel mapping logic
-        // For now, return default stereo mapping
-        return [0, 1]
+    private func getOutputChannelsForGroup(
+        _ group: SpeakerGroup,
+        channelMapping: ChannelMapping? = nil
+    ) -> [Int] {
+        // Priority 1: Use explicit user channel mapping if available
+        if let mapping = channelMapping,
+           mapping.outputChannels.count >= group.speakers.count {
+            return Array(mapping.outputChannels.prefix(group.speakers.count))
+        }
+        
+        // Priority 2: Use intelligent speaker-based mapping
+        return mapSpeakersToChannels(group.speakers)
     }
 
     func onGroupRecordingCompleted() {
@@ -450,8 +460,8 @@ final class RecordingViewModel: ObservableObject {
         } else {
             // Show transition UI for next group
             let nextGroup = remainingGroups.first!
-            let nextGroupIndex = remainingGroups.count
-            let totalGroups = LayoutManager.shared.getCurrentLayout()?.groups.count ?? 1
+            let nextGroupIndex = getTotalGroupCount() - remainingGroups.count + 1
+            let totalGroups = getTotalGroupCount()
             
             sequentialState = .betweenGroups(
                 nextGroup: nextGroupIndex,
@@ -466,21 +476,6 @@ final class RecordingViewModel: ObservableObject {
         }
     }
 
-    private func completeSequentialRecording() {
-        let totalRecordings = LayoutManager.shared.getCurrentLayout()?.groups.count ?? 1
-        sequentialState = .completed(totalRecordings: totalRecordings)
-        recordingState = .completed(outputFile: "Sequential recording completed")
-        
-        // Clean up
-        currentRecordingConfiguration = nil
-        remainingGroups = []
-        
-        // Auto-reset after showing completion
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            self.sequentialState = .idle
-        }
-    }
-
     func cancelSequentialRecording() {
         cancelRecording() // Stop current recording
         currentRecordingConfiguration = nil
@@ -491,7 +486,7 @@ final class RecordingViewModel: ObservableObject {
     // MARK: - Smart Test Signal Selection (Add to RecordingViewModel)
 
     /// Get the appropriate test signal file for a specific recording group
-    private func getTestSignalForGroup(_ group: RecordingGroup) -> String {
+    private func getTestSignalForGroup(_ group: SpeakerGroup) -> String {
         guard let scriptsRoot = Bundle.main.resourceURL?.appendingPathComponent("Scripts") else {
             print("❌ Scripts directory not found")
             return getDefaultTestSignal()
@@ -568,32 +563,122 @@ final class RecordingViewModel: ObservableObject {
     }
 
     /// Map speaker groups to appropriate output channels
-    private func getOutputChannelsForGroup(_ group: RecordingGroup) -> [Int] {
-        if group.speakers.count == 1 {
-            // Single speaker - map to appropriate channel
-            let speaker = group.speakers[0]
+    private func mapSpeakersToChannels(_ speakers: [String]) -> [Int] {
+        if speakers.count == 1 {
+            // Single speaker - map to correct channel based on speaker position
+            let speaker = speakers[0]
             switch speaker {
-            case "FL": return [0]      // Left channel
-            case "FR": return [1]      // Right channel
-            case "FC": return [0, 1]   // Center - send to both channels
-            case "SL": return [0]      // Side left
-            case "SR": return [1]      // Side right
-            case "BL": return [0]      // Back left
-            case "BR": return [1]      // Back right
-            case "TFL": return [0]     // Top front left
-            case "TFR": return [1]     // Top front right
-            case "TBL": return [0]     // Top back left
-            case "TBR": return [1]     // Top back right
-            default: return [0, 1]     // Default to stereo
+            case "FL":  return [0]      // Front Left → Channel 0
+            case "FR":  return [1]      // Front Right → Channel 1
+            case "FC":  return [2]      // Front Center → Channel 2
+            case "LFE": return [3]      // LFE → Channel 3
+            case "SL":  return [4]      // Side Left → Channel 4
+            case "SR":  return [5]      // Side Right → Channel 5
+            case "BL":  return [6]      // Back Left → Channel 6
+            case "BR":  return [7]      // Back Right → Channel 7
+            case "WL":  return [8]     // Wide Left → Channel 8
+            case "WR":  return [9]     // Wide Right → Channel 9
+            case "TFL": return [10]      // Top Front Left → Channel 8
+            case "TFR": return [11]      // Top Front Right → Channel 9
+            case "TML": return [12]     // Top Middle Left → Channel 10
+            case "TMR": return [13]     // Top Middle Right → Channel 11
+            case "TBL": return [14]     // Top Back Left → Channel 12
+            case "TBR": return [15]     // Top Back Right → Channel 13
+            default:    return [0]      // Unknown speaker → Channel 0
             }
-        } else if group.speakers.count == 2 {
-            // Stereo pair - use both channels
-            return [0, 1]
+            
+        } else if speakers.count == 2 {
+            // Stereo pair - map each speaker to its correct channel
+            var channels: [Int] = []
+            for speaker in speakers {
+                let speakerChannels = mapSpeakersToChannels([speaker])
+                channels.append(contentsOf: speakerChannels)
+            }
+            return channels.sorted()
+            
         } else {
-            // Multi-speaker group - use stereo for now
-            // This might need more sophisticated mapping for complex layouts
+            // Multi-speaker group (3+ speakers) - map each individually
+            var allChannels: [Int] = []
+            for speaker in speakers {
+                let speakerChannels = mapSpeakersToChannels([speaker])
+                allChannels.append(contentsOf: speakerChannels)
+            }
+            // Remove duplicates and sort
+            return Array(Set(allChannels)).sorted()
+        }
+    }
+    
+    /// Device compatibility fallback method
+    private func getOutputChannelsForGroupWithDeviceCheck(
+        _ group: SpeakerGroup,
+        maxDeviceChannels: Int,
+        channelMapping: ChannelMapping? = nil
+    ) -> [Int] {
+        // Get ideal channel mapping
+        let idealChannels = getOutputChannelsForGroup(group, channelMapping: channelMapping)
+        
+        // Check if device supports all required channels
+        let maxRequiredChannel = idealChannels.max() ?? 0
+        if maxRequiredChannel < maxDeviceChannels {
+            return idealChannels
+        }
+        
+        // Fallback to stereo if device doesn't have enough channels
+        print("⚠️ Layout requires channel \(maxRequiredChannel) but device only has \(maxDeviceChannels) channels. Falling back to stereo for group: \(group.speakers)")
+        
+        if group.speakers.count == 1 {
+            let speaker = group.speakers[0]
+            // Map single speakers to left/right based on typical position
+            switch speaker {
+            case "FL", "SL", "BL", "TFL", "TBL", "TML":
+                return [0]  // Left-side speakers → Left channel
+            case "FR", "SR", "BR", "TFR", "TBR", "TMR":
+                return [1]  // Right-side speakers → Right channel
+            case "FC", "LFE", "TC", "BC":
+                return [0, 1]  // Center speakers → Both channels
+            default:
+                return [0, 1]  // Unknown → Both channels
+            }
+        } else {
+            // Multi-speaker groups default to stereo
             return [0, 1]
         }
+    }
+    
+    /// Validate Layout For Device Selection
+    func validateLayoutForDevice(
+        layout: SpeakerLayout,
+        outputDevice: AudioDevice,
+        channelMapping: ChannelMapping?
+    ) -> (warnings: [String], canRecord: Bool) {
+        var warnings: [String] = []
+        var canRecord = true
+        
+        let maxDeviceChannels = outputDevice.maxOutputChannels
+        
+        // Basic device check
+        if !outputDevice.canPlayback {
+            warnings.append("Selected output device cannot play audio")
+            canRecord = false
+        }
+        
+        if maxDeviceChannels < 2 {
+            warnings.append("Output device must have at least 2 channels for recording")
+            canRecord = false
+        }
+        
+        // Check each group in the layout
+        for group in layout.groups {
+            let idealChannels = getOutputChannelsForGroup(group, channelMapping: channelMapping)
+            let maxRequiredChannel = idealChannels.max() ?? 0
+            
+            if maxRequiredChannel >= maxDeviceChannels {
+                warnings.append("Group '\(group.name)' requires channel \(maxRequiredChannel + 1) but device only has \(maxDeviceChannels)")
+                // Don't prevent recording - will fall back to stereo
+            }
+        }
+        
+        return (warnings: warnings, canRecord: canRecord)
     }
     
     /// Validate test signals for layout
@@ -657,6 +742,43 @@ final class RecordingViewModel: ObservableObject {
         } catch {
             print("Failed to list test signals: \(error)")
             return []
+        }
+    }
+    
+    /// Get channel group pairing
+    func getEffectiveChannelsForGroup(
+        _ group: SpeakerGroup,
+        maxDeviceChannels: Int,
+        channelMapping: ChannelMapping?
+    ) -> [Int] {
+        let idealChannels = getOutputChannelsForGroup(group, channelMapping: channelMapping)
+        let maxRequiredChannel = idealChannels.max() ?? 0
+        
+        // If device supports all required channels, use ideal mapping
+        if maxRequiredChannel < maxDeviceChannels {
+            return idealChannels
+        }
+        
+        // Otherwise, fall back to stereo mapping
+        print("⚠️ Falling back to stereo for group \(group.name) due to device channel limits")
+        return getFallbackChannelsForGroup(group)
+    }
+
+    private func getFallbackChannelsForGroup(_ group: SpeakerGroup) -> [Int] {
+        if group.speakers.count == 1 {
+            let speaker = group.speakers[0]
+            switch speaker {
+            case "FL", "SL", "BL", "TFL", "TBL", "TML", "WL":
+                return [0]  // Left-side speakers → Left channel
+            case "FR", "SR", "BR", "TFR", "TBR", "TMR", "WR":
+                return [1]  // Right-side speakers → Right channel
+            case "FC", "LFE":
+                return [0, 1]  // Center speakers → Both channels
+            default:
+                return [0, 1]  // Unknown → Both channels
+            }
+        } else {
+            return [0, 1]  // Multi-speaker groups default to stereo
         }
     }
 
@@ -782,265 +904,6 @@ final class RecordingViewModel: ObservableObject {
     
     func deselectAll() {
         selectedRecordings.removeAll()
-    }
-    
-    // MARK: - Speaker Layout Methods
-    func getSpeakerLayouts(completion: @escaping ([String: SpeakerLayoutInfo]) -> Void) {
-        print("🔍 Loading speaker layouts from Python...")
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard let scriptsRoot = Bundle.main.resourceURL?.appendingPathComponent("Scripts") else {
-                print("❌ Scripts directory not found for speaker layouts")
-                // Fallback to basic layouts
-                DispatchQueue.main.async {
-                    let fallbackLayouts = RecordingViewModel.createFallbackLayouts()
-                    completion(fallbackLayouts)
-                }
-                return
-            }
-            
-            let process = Process()
-            process.currentDirectoryURL = scriptsRoot
-            
-            if let embeddedPythonURL = Bundle.main.resourceURL?.appendingPathComponent("EmbeddedPython/Python.framework/Versions/3.9/bin/python3"),
-               FileManager.default.fileExists(atPath: embeddedPythonURL.path) {
-                // Use embedded Python
-                process.executableURL = embeddedPythonURL
-                process.arguments = [
-                    "-c",
-                    """
-                    import json, constants, sys
-                    
-                    def format_display_name(name):
-                        if name == '2.0':
-                            return 'Stereo (2.0)'
-                        elif name == '5.1':
-                            return '5.1 Surround'
-                        elif name == '7.1':
-                            return '7.1 Surround'
-                        elif name.endswith('.4'):
-                            return f'{name} Atmos'
-                        elif name.endswith('.6'):
-                            return f'{name} Atmos'
-                        elif name.endswith('.2'):
-                            return f'{name} Atmos'
-                        elif name == 'ambisonics':
-                            return 'Ambisonics'
-                        elif name == '1.0':
-                            return 'Mono (1.0)'
-                        else:
-                            return name
-                    
-                    def get_icon_for_layout(name):
-                        if 'ambisonics' in name:
-                            return 'globe'
-                        elif '.4' in name or '.6' in name or '.2' in name:
-                            return 'speaker.wave.1.arrowtriangles.up.right.down.left'
-                        elif name == '1.0':
-                            return 'speaker'
-                        elif name == '2.0':
-                            return 'speaker.2'
-                        else:
-                            return 'hifispeaker.2'
-                    
-                    layouts = {}
-                    for name, groups in constants.SPEAKER_LAYOUTS.items():
-                        layouts[name] = {
-                            'name': name,
-                            'displayName': format_display_name(name),
-                            'groups': [{'name': ','.join(group), 'speakers': group} for group in groups],
-                            'icon': get_icon_for_layout(name)
-                        }
-                    
-                    print(f"Found {len(layouts)} layouts: {list(layouts.keys())}", file=sys.stderr)
-                    json.dump(layouts, sys.stdout)
-                    """
-                ]
-                process.environment = [
-                    "PYTHONHOME": embeddedPythonURL.deletingLastPathComponent().deletingLastPathComponent().path,
-                    "PYTHONPATH": scriptsRoot.path
-                ]
-                print("🔍 Using embedded Python for speaker layouts")
-            } else {
-                // Fallback to system Python with simpler approach
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = [
-                    "python3",
-                    "-c",
-                    """
-                    import json, constants, sys
-                    
-                    print(f"Available layouts: {list(constants.SPEAKER_LAYOUTS.keys())}", file=sys.stderr)
-                    
-                    def format_display_name(name):
-                        if name == '2.0':
-                            return 'Stereo (2.0)'
-                        elif name == '5.1':
-                            return '5.1 Surround'
-                        elif name == '7.1':
-                            return '7.1 Surround'
-                        elif name.endswith('.4'):
-                            return f'{name} Atmos'
-                        elif name.endswith('.6'):
-                            return f'{name} Atmos'
-                        elif name.endswith('.2'):
-                            return f'{name} Atmos'
-                        elif name == 'ambisonics':
-                            return 'Ambisonics'
-                        elif name == '1.0':
-                            return 'Mono (1.0)'
-                        else:
-                            return name
-                    
-                    def get_icon_for_layout(name):
-                        if 'ambisonics' in name:
-                            return 'globe'
-                        elif '.4' in name or '.6' in name or '.2' in name:
-                            return 'airpodspro'
-                        elif name == '1.0':
-                            return 'speaker'
-                        elif name == '2.0':
-                            return 'speaker.2'
-                        else:
-                            return 'speaker.wave.3'
-                    
-                    layouts = {}
-                    for name, groups in constants.SPEAKER_LAYOUTS.items():
-                        layouts[name] = {
-                            'name': name,
-                            'displayName': format_display_name(name),
-                            'groups': [{'name': ','.join(group), 'speakers': group} for group in groups],
-                            'icon': get_icon_for_layout(name)
-                        }
-                    
-                    print(f"Processed {len(layouts)} layouts", file=sys.stderr)
-                    json.dump(layouts, sys.stdout)
-                    """
-                ]
-                print("🔍 Using system Python for speaker layouts")
-            }
-            
-            let pipe = Pipe()
-            let errorPipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = errorPipe
-            
-            do {
-                try process.run()
-                process.waitUntilExit()
-                
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                
-                if !errorData.isEmpty, let errorString = String(data: errorData, encoding: .utf8) {
-                    print("⚠️ Python stderr for layouts: \(errorString)")
-                }
-                
-                // Debug: Print raw data
-                if let dataString = String(data: data, encoding: .utf8) {
-                    print("📋 Raw Python output: \(dataString.prefix(500))...")
-                }
-                
-                if let layoutsDict = try? JSONSerialization.jsonObject(with: data) as? [String: [String: Any]] {
-                    let convertedLayouts = RecordingViewModel.convertPythonLayoutsToSwift(layoutsDict)
-                    DispatchQueue.main.async {
-                        print("✅ Loaded \(convertedLayouts.count) speaker layouts from Python")
-                        completion(convertedLayouts)
-                    }
-                } else {
-                    print("❌ Failed to parse speaker layouts from Python")
-                    if let dataString = String(data: data, encoding: .utf8) {
-                        print("Python output: \(dataString)")
-                    }
-                    // Fallback to basic layouts
-                    DispatchQueue.main.async {
-                        let fallbackLayouts = RecordingViewModel.createFallbackLayouts()
-                        completion(fallbackLayouts)
-                    }
-                }
-                
-            } catch {
-                print("❌ Failed to execute Python process for layouts: \(error)")
-                // Fallback to basic layouts
-                DispatchQueue.main.async {
-                    let fallbackLayouts = RecordingViewModel.createFallbackLayouts()
-                    completion(fallbackLayouts)
-                }
-            }
-        }
-    }
-    
-    private nonisolated static func convertPythonLayoutsToSwift(_ pythonLayouts: [String: [String: Any]]) -> [String: SpeakerLayoutInfo] {
-        var swiftLayouts: [String: SpeakerLayoutInfo] = [:]
-        
-        for (key, layoutData) in pythonLayouts {
-            guard let name = layoutData["name"] as? String,
-                  let displayName = layoutData["displayName"] as? String,
-                  let icon = layoutData["icon"] as? String,
-                  let groupsData = layoutData["groups"] as? [[String: Any]] else {
-                continue
-            }
-            
-            let groups = groupsData.compactMap { groupData -> RecordingGroup? in
-                guard let groupName = groupData["name"] as? String,
-                      let speakers = groupData["speakers"] as? [String] else {
-                    return nil
-                }
-                return RecordingGroup(name: groupName, speakers: speakers)
-            }
-            
-            let layoutInfo = SpeakerLayoutInfo(
-                name: name,
-                displayName: displayName,
-                groups: groups,
-                icon: icon
-            )
-            
-            swiftLayouts[key] = layoutInfo
-        }
-        
-        return swiftLayouts
-    }
-    
-    private nonisolated static func createFallbackLayouts() -> [String: SpeakerLayoutInfo] {
-        print("✅ Using fallback speaker layouts")
-        return [
-            "2.0": SpeakerLayoutInfo(
-                name: "2.0",
-                displayName: "Stereo (2.0)",
-                groups: [RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"])],
-                icon: "speaker.2"
-            ),
-            "5.1": SpeakerLayoutInfo(
-                name: "5.1",
-                displayName: "5.1 Surround",
-                groups: [
-                    RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"]),
-                    RecordingGroup(name: "FC", speakers: ["FC"]),
-                    RecordingGroup(name: "BL,BR", speakers: ["BL", "BR"])
-                ],
-                icon: "speaker.wave.3"
-            ),
-            "7.1": SpeakerLayoutInfo(
-                name: "7.1",
-                displayName: "7.1 Surround",
-                groups: [
-                    RecordingGroup(name: "FL,FR", speakers: ["FL", "FR"]),
-                    RecordingGroup(name: "FC", speakers: ["FC"]),
-                    RecordingGroup(name: "SL,SR", speakers: ["SL", "SR"]),
-                    RecordingGroup(name: "BL,BR", speakers: ["BL", "BR"])
-                ],
-                icon: "speaker.wave.3"
-            ),
-            "7.1.4": SpeakerLayoutInfo(
-                name: "7.1.4",
-                displayName: "7.1.4 Atmos",
-                groups: [
-                    RecordingGroup(name: "FL,FC,FR,SL,SR,BL,BR,TFL,TFR,TBL,TBR", speakers: ["FL", "FC", "FR", "SL", "SR", "BL", "BR", "TFL", "TFR", "TBL", "TBR"])
-                ],
-                icon: "airpodspro"
-            )
-        ]
     }
     
     // MARK: - Legacy Support Methods
@@ -1323,35 +1186,32 @@ extension RecordingViewModel {
         outputDevice: AudioDevice,
         channelMapping: ChannelMapping?
     ) {
-        // Simple implementation for now - just record first group
-        guard let firstGroup = layout.groups.first else {
-            recordingState = .error("No groups in layout")
+        // Validate layout against device capabilities first
+        let layoutErrors = validateLayoutForRecording(layout, outputDevice: outputDevice)
+        if !layoutErrors.isEmpty {
+            recordingState = .error("Layout validation failed: \(layoutErrors.joined(separator: ", "))")
             return
         }
         
-        let fileName = "\(firstGroup.speakers.joined(separator: ",")).wav"
-        let outputPath = "\(measurementDir)/\(fileName)"
-        
-        let configuration = RecordingConfiguration(
+        let baseConfig = RecordingConfiguration(
             measurementDir: measurementDir,
             testSignal: testSignal,
             playbackDevice: String(outputDevice.id),
             recordingDevice: String(inputDevice.id),
-            outputFile: outputPath,
+            outputFile: nil,
             speakerLayout: layout.name,
-            recordingGroup: firstGroup.name,
-            outputChannels: Array(0..<firstGroup.speakers.count),
+            recordingGroup: nil,
+            outputChannels: nil,
             inputChannels: [0, 1]
         )
         
-        startRecording(with: configuration)
-    }
-    
-    enum RecordingType: String, CaseIterable {
-        case measurement = "Measurement Recording"
-        case headphone = "Headphone EQ"
-        case room = "Room Response"
-        case testSweep = "Test Sweep"
+        if layout.groups.count == 1 {
+            // Single group recording
+            startSingleGroupRecording(layout: layout, baseConfig: baseConfig, channelMapping: channelMapping)
+        } else {
+            // Multi-group sequential recording
+            startMultiGroupRecording(layout: layout, baseConfig: baseConfig, channelMapping: channelMapping)
+        }
     }
     
     /// Start standard recording for non-measurement types
@@ -1364,7 +1224,7 @@ extension RecordingViewModel {
         outputDevice: AudioDevice
     ) {
         // Check recording type and configure accordingly
-        let isRoomRecording = (type.rawValue == "Room Response")
+        let isRoomRecording = (type == .roomResponse)
         
         let configuration = RecordingConfiguration(
             measurementDir: measurementDir,
@@ -1415,9 +1275,7 @@ extension RecordingViewModel {
     ) {
         // Store configuration for sequential recording
         currentRecordingConfiguration = baseConfig
-        remainingGroups = layout.groups.map { group in
-            RecordingGroup(name: group.name, speakers: group.speakers)
-        }
+        remainingGroups = layout.groups
         
         // Initialize sequential state
         sequentialState = .preparing(totalGroups: layout.groups.count)
@@ -1437,19 +1295,17 @@ extension RecordingViewModel {
         let groupIndex = getGroupIndex(for: currentGroup)
         let totalGroups = getTotalGroupCount()
         
-        // Update sequential state
         sequentialState = .recordingGroup(
             currentGroup: groupIndex,
             totalGroups: totalGroups,
             groupName: currentGroup.name
         )
         
-        // Get output channels for this group
+        // Use basic channel mapping
         let outputChannels = getOutputChannelsForGroup(currentGroup, channelMapping: channelMapping)
         let fileName = "\(currentGroup.speakers.joined(separator: ",")).wav"
         let outputPath = "\(baseConfig.measurementDir)/\(fileName)"
         
-        // Create group-specific configuration
         let groupConfig = RecordingConfiguration(
             measurementDir: baseConfig.measurementDir,
             testSignal: baseConfig.testSignal,
@@ -1462,36 +1318,12 @@ extension RecordingViewModel {
             inputChannels: baseConfig.inputChannels
         )
         
-        // Start recording this group
         startRecording(with: groupConfig)
-    }
-    
-    private func getOutputChannelsForGroup(
-        _ group: SpeakerGroup,
-        channelMapping: ChannelMapping?
-    ) -> [Int] {
-        // If we have channel mapping, use it
-        if let mapping = channelMapping,
-           mapping.outputChannels.count >= group.speakers.count {
-            return Array(mapping.outputChannels.prefix(group.speakers.count))
-        }
-        
-        // Otherwise, use sequential mapping
-        return Array(0..<group.speakers.count)
-    }
-    
-    private func getOutputChannelsForGroup(
-        _ group: RecordingGroup,
-        channelMapping: ChannelMapping?
-    ) -> [Int] {
-        // Convert RecordingGroup to SpeakerGroup format
-        let speakerGroup = SpeakerGroup(name: group.name, speakers: group.speakers)
-        return getOutputChannelsForGroup(speakerGroup, channelMapping: channelMapping)
     }
     
     private func completeSequentialRecording() {
         sequentialState = .completed
-        recordingState = .completed
+        recordingState = .completed(outputFile: "Sequential recording completed") // Add the required String parameter
         currentRecordingConfiguration = nil
         remainingGroups = []
         
@@ -1535,7 +1367,7 @@ extension RecordingViewModel {
     
     // MARK: - Helper Methods
     
-    private func getGroupIndex(for group: RecordingGroup) -> Int {
+    private func getGroupIndex(for group: SpeakerGroup) -> Int {
         // Calculate current group index based on remaining groups
         return getTotalGroupCount() - remainingGroups.count
     }

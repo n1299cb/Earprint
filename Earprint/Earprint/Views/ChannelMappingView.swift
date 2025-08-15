@@ -337,11 +337,11 @@ struct ChannelMappingView: View {
             
             // Action buttons
             HStack(spacing: 12) {
-                Button("Debug Bundle") {
-                    debugBundleStructure()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+//                Button("Debug Bundle") {
+//                    debugBundleStructure()
+//                }
+//                .buttonStyle(.bordered)
+//                .controlSize(.small)
                 
                 Button("Cancel") {
                     isPresented = false

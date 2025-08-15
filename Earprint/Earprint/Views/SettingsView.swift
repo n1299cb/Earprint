@@ -193,23 +193,49 @@ struct SettingsView: View {
                             title: "Default Measurement Directory",
                             description: "The default location for saving measurements and recordings"
                         ) {
-                            HStack {
-                                Text(defaultMeasurementDir.isEmpty ?
-                                     "Use current workspace" :
-                                     URL(fileURLWithPath: defaultMeasurementDir).lastPathComponent)
-                                    .foregroundColor(defaultMeasurementDir.isEmpty ? .secondary : .primary)
-                                
-                                Spacer()
-                                
-                                Button("Browse") {
-                                    selectMeasurementDirectory()
+                            VStack(alignment: .trailing, spacing: 8) {
+                                // Status display
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        if defaultMeasurementDir.isEmpty {
+                                            Text("Use current workspace")
+                                                .foregroundColor(.secondary)
+                                            
+                                            Text(workspaceManager.currentWorkspace.lastPathComponent)
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        } else {
+                                            Text(URL(fileURLWithPath: defaultMeasurementDir).lastPathComponent)
+                                                .foregroundColor(.primary)
+                                            
+                                            Text(FileManager.default.fileExists(atPath: defaultMeasurementDir) ?
+                                                 "Available" : "Directory not found")
+                                            .font(.caption)
+                                            .foregroundColor(FileManager.default.fileExists(atPath: defaultMeasurementDir) ? .green : .red)
+                                        }
+                                    }
+                                    
+                                    Spacer()
                                 }
-                                .buttonStyle(.bordered)
                                 
-                                Button("Use Workspace") {
-                                    defaultMeasurementDir = workspaceManager.currentWorkspace.path
+                                // Action buttons in a separate row
+                                HStack(spacing: 8) {
+                                    Spacer()
+                                                
+                                    Button("Browse") {
+                                        selectMeasurementDirectory()
+                                    }
+                                    .buttonStyle(.bordered)
+                                                
+                                    // Only show "Reset to Workspace" if a custom directory is set
+                                    if !defaultMeasurementDir.isEmpty {
+                                        Button("Reset to Workspace") {
+                                            defaultMeasurementDir = ""
+                                            configurationVM.updateDefaultMeasurementDir("")
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
                                 }
-                                .buttonStyle(.bordered)
                             }
                         }
                         
@@ -218,22 +244,54 @@ struct SettingsView: View {
                             description: "The default audio file used for measurements"
                         ) {
                             HStack {
-                                Text(defaultTestSignal.isEmpty ?
-                                     "Use workspace signal" :
-                                     URL(fileURLWithPath: defaultTestSignal).lastPathComponent)
-                                    .foregroundColor(defaultTestSignal.isEmpty ? .secondary : .primary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    if defaultTestSignal.isEmpty {
+                                        Text("Use workspace signal")
+                                            .foregroundColor(.secondary)
+                                        
+                                        let workspaceSignal = workspaceManager.getTestSignalPath()
+                                        Text(workspaceSignal.isEmpty ?
+                                             "No signal available" :
+                                             URL(fileURLWithPath: workspaceSignal).lastPathComponent)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    } else {
+                                        Text(URL(fileURLWithPath: defaultTestSignal).lastPathComponent)
+                                            .foregroundColor(.primary)
+                                        
+                                        Text(FileManager.default.fileExists(atPath: defaultTestSignal) ?
+                                             "Available" : "File not found")
+                                            .font(.caption)
+                                            .foregroundColor(FileManager.default.fileExists(atPath: defaultTestSignal) ? .green : .red)
+                                    }
+                                }
                                 
                                 Spacer()
                                 
-                                Button("Browse") {
-                                    selectTestSignal()
+                                HStack(spacing: 8) {
+                                    Button("Browse") {
+                                        selectTestSignal()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    
+                                    Button("Use Workspace") {
+                                        let workspaceSignal = workspaceManager.getTestSignalPath()
+                                        if !workspaceSignal.isEmpty {
+                                            defaultTestSignal = workspaceSignal
+                                            configurationVM.updateDefaultTestSignal(workspaceSignal)
+                                        }
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .disabled(workspaceManager.getTestSignalPath().isEmpty)
+                                    
+                                    if !defaultTestSignal.isEmpty {
+                                        Button("Clear") {
+                                            defaultTestSignal = ""
+                                            configurationVM.updateDefaultTestSignal("")
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
                                 }
-                                .buttonStyle(.bordered)
-                                
-                                Button("Use Default") {
-                                    defaultTestSignal = workspaceManager.getTestSignalPath()
-                                }
-                                .buttonStyle(.bordered)
                             }
                         }
                     }
@@ -247,6 +305,9 @@ struct SettingsView: View {
                         ) {
                             Toggle("", isOn: $autoSaveConfiguration)
                                 .toggleStyle(.switch)
+                                .onChange(of: autoSaveConfiguration) { newValue in
+                                    configurationVM.updateAutoSaveResults(newValue)
+                                }
                         }
                         
                         SettingsRow(
@@ -255,6 +316,9 @@ struct SettingsView: View {
                         ) {
                             Toggle("", isOn: $enableDetailedLogging)
                                 .toggleStyle(.switch)
+                                .onChange(of: enableDetailedLogging) { newValue in
+                                    processingVM.autoLog = newValue
+                                }
                         }
                         
                         SettingsRow(
@@ -263,6 +327,7 @@ struct SettingsView: View {
                         ) {
                             Toggle("", isOn: $rememberWindowPosition)
                                 .toggleStyle(.switch)
+                                // Note: This would need UserDefaults integration
                         }
                     }
                 }
@@ -286,6 +351,9 @@ struct SettingsView: View {
                 }
             }
             .padding(24)
+            .onAppear {
+                validateConfiguration()
+            }
         }
     }
     
@@ -491,10 +559,10 @@ struct SettingsView: View {
                                 
                                 Spacer()
                                 
-                                Button("Open Scripts") {
-                                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: scriptsRoot.path)
-                                }
-                                .buttonStyle(.bordered)
+//                                Button("Open Scripts") {
+//                                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: scriptsRoot.path)
+//                                }
+//                                .buttonStyle(.bordered)
                             }
                         }
                     }
@@ -734,6 +802,7 @@ struct SettingsView: View {
         
         if panel.runModal() == .OK, let url = panel.url {
             defaultMeasurementDir = url.path
+            configurationVM.updateDefaultMeasurementDir(url.path)
         }
     }
     
@@ -745,6 +814,7 @@ struct SettingsView: View {
         
         if panel.runModal() == .OK, let url = panel.url {
             defaultTestSignal = url.path
+            configurationVM.updateDefaultTestSignal(url.path)
         }
     }
     

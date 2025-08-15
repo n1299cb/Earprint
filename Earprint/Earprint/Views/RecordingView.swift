@@ -1,5 +1,6 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import Foundation
 import UniformTypeIdentifiers
 
 // MARK: - Recording View
@@ -21,40 +22,6 @@ struct RecordingView: View {
     @State private var showingTestSignalPicker = false
     @State private var showingRecordingResults = false
     @State private var recordingResultsURL: URL?
-    
-    enum RecordingType: String, CaseIterable {
-        case measurement = "Measurement Recording"
-        case headphone = "Headphone EQ"
-        case roomResponse = "Room Response"
-        case testSweep = "Test Sweep"
-        
-        var defaultFileName: String {
-            switch self {
-            case .measurement: return "measurement"
-            case .headphone: return "headphones"
-            case .roomResponse: return "room"
-            case .testSweep: return "test_sweep"
-            }
-        }
-        
-        var description: String {
-            switch self {
-            case .measurement: return "Record binaural impulse response measurements"
-            case .headphone: return "Record headphone compensation signal"
-            case .roomResponse: return "Record room acoustic response"
-            case .testSweep: return "Record test sweep for calibration"
-            }
-        }
-        
-        var icon: String {
-            switch self {
-            case .measurement: return "waveform.circle"
-            case .headphone: return "headphones"
-            case .roomResponse: return "speaker.wave.3"
-            case .testSweep: return "tuningfork"
-            }
-        }
-    }
     
     private var canStartRecording: Bool {
         !testSignalPath.isEmpty &&
@@ -103,7 +70,6 @@ struct RecordingView: View {
             RecordingHeaderView(
                 recordingType: $recordingType,
                 selectedLayoutName: $layoutManager.selectedLayoutName,
-                availableLayouts: layoutManager.availableLayouts,
                 isRecording: processingVM.isRunning,
                 canStartRecording: canStartRecording,
                 finalOutputPath: finalOutputPath,
@@ -230,7 +196,7 @@ struct RecordingView: View {
     private func validateCurrentLayout() {
         guard let layout = layoutManager.getCurrentLayout() else { return }
         
-        // Use the new validation method that expects SpeakerLayout
+        // Use the updated validation method that expects SpeakerLayout
         let missingSignals = recordingVM.validateTestSignalsForLayout(layout)
         if !missingSignals.isEmpty {
             print("⚠️ Missing test signals for groups: \(missingSignals.joined(separator: ", "))")
@@ -362,9 +328,8 @@ struct WorkspaceInfoSection: View {
 
 // MARK: - Recording Header View
 struct RecordingHeaderView: View {
-    @Binding var recordingType: RecordingView.RecordingType
+    @Binding var recordingType: RecordingType
     @Binding var selectedLayoutName: String
-    let availableLayouts: [String: SpeakerLayout]
     let isRecording: Bool
     let canStartRecording: Bool
     let finalOutputPath: String
@@ -372,8 +337,10 @@ struct RecordingHeaderView: View {
     let startRecordingAction: () -> Void
     @ObservedObject var audioDeviceVM: AudioDeviceViewModel
     
+    @StateObject private var layoutManager = LayoutManager.shared
+    
     private var currentLayout: SpeakerLayout? {
-        availableLayouts[selectedLayoutName]
+        layoutManager.getCurrentLayout()
     }
     
     var body: some View {
@@ -454,7 +421,7 @@ struct RecordingHeaderView: View {
             if !isRecording {
                 VStack(spacing: 12) {
                     Picker("Recording Type", selection: $recordingType) {
-                        ForEach(RecordingView.RecordingType.allCases, id: \.self) { type in
+                        ForEach(RecordingType.allCases, id: \.self) { type in 
                             Label(type.rawValue, systemImage: type.icon)
                                 .tag(type)
                         }
@@ -462,7 +429,7 @@ struct RecordingHeaderView: View {
                     .pickerStyle(.segmented)
                     
                     // Show speaker layout picker only for measurement recordings
-                    if recordingType == .measurement && !availableLayouts.isEmpty {
+                    if recordingType == .measurement && !layoutManager.availableLayouts.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Image(systemName: "speaker.wave.3")
@@ -471,13 +438,12 @@ struct RecordingHeaderView: View {
                                     .font(.headline)
                                 Spacer()
                                 
-                                // Show channel count and validation status
                                 if let layout = currentLayout {
                                     HStack {
                                         Text("\(layout.totalSpeakers) channels")
                                             .font(.caption)
                                             .foregroundColor(.secondary)
-                                        
+                                                
                                         // Show warning if layout exceeds device capabilities
                                         if let outputDevice = audioDeviceVM.selectedOutputDevice {
                                             let requiredChannels = layout.totalSpeakers
@@ -494,39 +460,39 @@ struct RecordingHeaderView: View {
                                     .cornerRadius(4)
                                 }
                             }
-                            
+                                    
                             Picker("Speaker Layout", selection: $selectedLayoutName) {
-                                ForEach(availableLayouts.keys.sorted(), id: \.self) { layoutName in
-                                    if let layout = availableLayouts[layoutName] {
+                                ForEach(layoutManager.availableLayoutNames, id: \.self) { layoutName in
+                                    if let layout = layoutManager.availableLayouts[layoutName] {
                                         Label(layout.displayName, systemImage: layout.icon)
                                             .tag(layoutName)
                                     }
                                 }
                             }
                             .pickerStyle(.menu)
-                            
+                                    
                             // Show layout validation warnings
                             if let outputDevice = audioDeviceVM.selectedOutputDevice,
-                               let layout = currentLayout {
+                                let layout = currentLayout {
                                 let requiredChannels = layout.totalSpeakers
                                 if outputDevice.maxOutputChannels < requiredChannels {
                                     HStack {
                                         Image(systemName: "exclamationmark.triangle.fill")
                                             .foregroundColor(.orange)
-                                        Text("Layout requires \(requiredChannels) channels but device only has \(outputDevice.maxOutputChannels)")
+                                            Text("Layout requires \(requiredChannels) channels but device only has \(outputDevice.maxOutputChannels)")
                                             .font(.caption)
                                             .foregroundColor(.orange)
                                     }
                                 }
                             }
-                            
+                                    
                             // Show expected recording files
                             if let layout = currentLayout, layout.groups.count > 1 {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Recording sequence:")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
-                                    
+                                        
                                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), alignment: .leading, spacing: 4) {
                                         ForEach(Array(layout.groups.enumerated()), id: \.offset) { index, group in
                                             Text("\(group.speakers.joined(separator: ",")).wav")
@@ -621,7 +587,7 @@ struct RecordingConfigurationSection: View {
     @Binding var testSignalPath: String
     @Binding var outputFileName: String
     @Binding var useCustomName: Bool
-    let recordingType: RecordingView.RecordingType
+    let recordingType: RecordingType
     let currentLayout: SpeakerLayout?
     @Binding var showingTestSignalPicker: Bool
     @ObservedObject var workspaceManager: WorkspaceManager
