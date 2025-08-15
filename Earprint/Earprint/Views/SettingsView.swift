@@ -19,8 +19,7 @@ struct SettingsView: View {
     @State private var showingChannelMapping = false
     
     // MARK: - Layout and Speaker Configuration
-    @State private var availableLayouts: [String] = []
-    @State private var selectedLayout = "7.1"
+    @StateObject private var layoutManager = LayoutManager.shared
     
     // MARK: - Basic Settings (synced with ConfigurationViewModel)
     @State private var defaultMeasurementDir = ""
@@ -41,6 +40,14 @@ struct SettingsView: View {
     // MARK: - Warning State
     @State private var channelWarningText: String = ""
     @State private var configurationIssues: [String] = []
+    
+    /// Embedded Python Instantiation
+    private var embeddedPythonURL: URL? {
+        Bundle.main.url(forResource: "Python", withExtension: "framework", subdirectory: "EmbeddedPython")?
+            .appendingPathComponent("Versions")
+            .appendingPathComponent("Current")
+            .appendingPathComponent("bin/python3")
+    }
     
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general = "General"
@@ -121,12 +128,12 @@ struct SettingsView: View {
             Text("This will reset all settings to their default values. This action cannot be undone.")
         }
         .sheet(isPresented: $showingChannelMapping) {
-            // Integration with RecordingViewModel's speaker layouts
-            if let speakerLabels = fetchSpeakerLabelsArray(layout: selectedLayout) {
+            // Use LayoutManager's speaker labels
+            if let layout = layoutManager.getCurrentLayout() {
                 ChannelMappingView(
                     playbackChannels: audioDeviceVM.selectedOutputDevice?.maxOutputChannels ?? 0,
                     recordingChannels: audioDeviceVM.selectedInputDevice?.maxInputChannels ?? 0,
-                    speakerLabels: speakerLabels,
+                    speakerLabels: layout.speakerLabels,
                     playbackDevice: audioDeviceVM.selectedOutputDevice?.name ?? "",
                     channelMapping: Binding(
                         get: { self.channelMappingDictionary },
@@ -147,7 +154,7 @@ struct SettingsView: View {
         .onAppear {
             loadCurrentSettings()
             audioDeviceVM.refreshDevices()
-            loadLayouts()
+            layoutManager.refreshLayouts()
             validateConfiguration()
         }
         .onDisappear {
@@ -163,7 +170,7 @@ struct SettingsView: View {
             validateConfiguration()
             if autoSaveConfiguration { saveSettings() }
         }
-        .onChange(of: selectedLayout) { _ in
+        .onChange(of: layoutManager.selectedLayoutName) { _ in
             updateChannelWarning()
             if autoSaveConfiguration { saveSettings() }
         }
@@ -411,16 +418,84 @@ struct SettingsView: View {
                 SettingsSection(title: "Speaker Layout", icon: "hifispeaker.2") {
                     VStack(spacing: 16) {
                         SettingsRow(
-                            title: "Default Speaker Layout",
-                            description: "The default speaker configuration for measurements"
+                            title: "Current Layout",
+                            description: "Speaker arrangement for measurements and recordings"
                         ) {
-                            Picker("Layout", selection: $selectedLayout) {
-                                ForEach(availableLayouts, id: \.self) { layout in
-                                    Text(layout).tag(layout)
+                            VStack(alignment: .trailing, spacing: 8) {
+                                // Layout Picker - synced with LayoutManager
+                                Picker("Layout", selection: $layoutManager.selectedLayoutName) {
+                                    ForEach(layoutManager.availableLayoutNames, id: \.self) { layoutName in
+                                        if let layout = layoutManager.availableLayouts[layoutName] {
+                                            Label(layout.displayName, systemImage: layout.icon)
+                                                .tag(layoutName)
+                                        }
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .frame(maxWidth: 300)
+                                
+                                // Layout Info
+                                if let currentLayout = layoutManager.getCurrentLayout() {
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text("\(currentLayout.totalSpeakers) total speakers")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                        
+                                        Text("\(currentLayout.groups.count) recording groups")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
-                            .pickerStyle(.menu)
-                            .frame(maxWidth: 200)
+                        }
+                        
+                        // Layout Details (expandable)
+                        if let currentLayout = layoutManager.getCurrentLayout() {
+                            DisclosureGroup("Layout Details") {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(Array(currentLayout.groups.enumerated()), id: \.offset) { index, group in
+                                        HStack {
+                                            Text("Group \(index + 1):")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                            
+                                            Text(group.speakers.joined(separator: ", "))
+                                                .font(.caption)
+                                                .fontWeight(.medium)
+                                            
+                                            Spacer()
+                                            
+                                            Text("(\(group.speakers.count) speakers)")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .padding(.vertical, 2)
+                                    }
+                                    
+                                    Divider()
+                                    
+                                    HStack {
+                                        Text("Recording sequence:")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        
+                                        Spacer()
+                                        
+                                        if currentLayout.groups.count > 1 {
+                                            Text("\(currentLayout.groups.count) separate recordings")
+                                                .font(.caption)
+                                                .foregroundColor(.orange)
+                                        } else {
+                                            Text("Single recording")
+                                                .font(.caption)
+                                                .foregroundColor(.green)
+                                        }
+                                    }
+                                }
+                                .padding(8)
+                                .background(Color.secondary.opacity(0.1))
+                                .cornerRadius(6)
+                            }
                         }
                         
                         HStack {
@@ -428,13 +503,22 @@ struct SettingsView: View {
                                 showingChannelMapping = true
                             }
                             .buttonStyle(.bordered)
-                            .disabled(audioDeviceVM.selectedOutputDevice == nil || audioDeviceVM.selectedInputDevice == nil)
+                            .disabled(audioDeviceVM.selectedOutputDevice == nil ||
+                                     audioDeviceVM.selectedInputDevice == nil ||
+                                     layoutManager.getCurrentLayout() == nil)
                             
                             Button("Auto Map Channels") {
                                 audioDeviceVM.autoMapChannelsAction()
                             }
                             .buttonStyle(.bordered)
-                            .disabled(audioDeviceVM.selectedOutputDevice == nil || audioDeviceVM.selectedInputDevice == nil)
+                            .disabled(audioDeviceVM.selectedOutputDevice == nil ||
+                                     audioDeviceVM.selectedInputDevice == nil ||
+                                     layoutManager.getCurrentLayout() == nil)
+                            
+                            Button("Refresh Layouts") {
+                                layoutManager.refreshLayouts()
+                            }
+                            .buttonStyle(.bordered)
                             
                             Spacer()
                             
@@ -445,11 +529,54 @@ struct SettingsView: View {
                             }
                         }
                         
+                        // Channel warning text
                         if !channelWarningText.isEmpty {
                             Text(channelWarningText)
                                 .font(.caption)
                                 .foregroundColor(.red)
                                 .padding(.top, 4)
+                        }
+                        
+                        // Device compatibility warnings
+                        if let outputDevice = audioDeviceVM.selectedOutputDevice,
+                           let layout = layoutManager.getCurrentLayout() {
+                            let warnings = layoutManager.validateLayout(against: outputDevice.maxOutputChannels)
+                            if !warnings.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(warnings, id: \.self) { warning in
+                                        HStack {
+                                            Image(systemName: "exclamationmark.triangle.fill")
+                                                .foregroundColor(.orange)
+                                                .font(.caption)
+                                            Text(warning)
+                                                .font(.caption)
+                                                .foregroundColor(.orange)
+                                        }
+                                    }
+                                }
+                                .padding(8)
+                                .background(Color.orange.opacity(0.1))
+                                .cornerRadius(6)
+                            }
+                        }
+                        
+                        // LayoutManager warnings
+                        if !layoutManager.layoutWarnings.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(layoutManager.layoutWarnings, id: \.self) { warning in
+                                    HStack {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .foregroundColor(.red)
+                                            .font(.caption)
+                                        Text(warning)
+                                            .font(.caption)
+                                            .foregroundColor(.red)
+                                    }
+                                }
+                            }
+                            .padding(8)
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(6)
                         }
                         
                         // Show device warnings from AudioDeviceViewModel
@@ -461,6 +588,33 @@ struct SettingsView: View {
                                         .foregroundColor(.orange)
                                 }
                             }
+                        }
+                        
+                        // Loading state
+                        if layoutManager.isLoading {
+                            HStack {
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                                    .scaleEffect(0.7)
+                                Text("Loading layouts...")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        // Load error
+                        if let error = layoutManager.loadError {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                            .padding(8)
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(6)
                         }
                     }
                 }
@@ -869,8 +1023,10 @@ struct SettingsView: View {
         audioDeviceVM.selectedOutputDevice = nil
         audioDeviceVM.refreshDevices()
         
+        // Reset LayoutManager
+        layoutManager.updateLayout("7.1") // Use LayoutManager method
+        
         // Reset local state
-        selectedLayout = "7.1"
         channelWarningText = ""
         configurationIssues = []
         enableDebugMode = false
@@ -958,87 +1114,6 @@ struct SettingsView: View {
         return report
     }
     
-    // MARK: - Speaker Layout Methods (integrated with RecordingViewModel)
-    private func loadLayouts() {
-        recordingVM.getSpeakerLayouts { layouts in
-            self.availableLayouts = Array(layouts.keys).sorted()
-            if self.selectedLayout.isEmpty, let first = self.availableLayouts.first {
-                self.selectedLayout = first
-            }
-        }
-    }
-    
-    private func fetchSpeakerLabels(layout: String) -> [String] {
-        // Use the same approach as in SettingsView but leverage RecordingViewModel
-        guard let scriptsRoot = Bundle.main.resourceURL?.appendingPathComponent("Scripts") else {
-            return fallbackSpeakerLabels(for: layout)
-        }
-        
-        let process = Process()
-        process.currentDirectoryURL = scriptsRoot
-        
-        if let embeddedPythonURL = Bundle.main.resourceURL?.appendingPathComponent("EmbeddedPython/Python.framework/Versions/3.9/bin/python3"),
-           FileManager.default.fileExists(atPath: embeddedPythonURL.path) {
-            // Use embedded Python
-            process.executableURL = embeddedPythonURL
-            process.arguments = [
-                "-c",
-                "import json,constants,sys; print(json.dumps([c for g in constants.SPEAKER_LAYOUTS.get('" + layout + "', []) for c in g]))"
-            ]
-            process.environment = [
-                "PYTHONHOME": embeddedPythonURL.deletingLastPathComponent().deletingLastPathComponent().path,
-                "PYTHONPATH": scriptsRoot.path
-            ]
-        } else {
-            // Fallback to system Python
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = [
-                "python3",
-                "-c",
-                "import json,constants,sys; print(json.dumps([c for g in constants.SPEAKER_LAYOUTS.get('" + layout + "', []) for c in g]))"
-            ]
-        }
-        
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        
-        do {
-            try process.run()
-            process.waitUntilExit()
-            
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let arr = try? JSONSerialization.jsonObject(with: data) as? [String] {
-                return arr
-            }
-        } catch {
-            print("⚠️ Failed to execute Python for speaker labels: \(error)")
-        }
-        
-        return fallbackSpeakerLabels(for: layout)
-    }
-    
-    private func fallbackSpeakerLabels(for layout: String) -> [String] {
-        switch layout {
-        case "5.1":
-            return ["FL", "FR", "C", "LFE", "SL", "SR"]
-        case "7.1":
-            return ["FL", "FR", "C", "LFE", "SL", "SR", "BL", "BR"]
-        case "9.1.6":
-            return ["FL", "FR", "C", "LFE", "SL", "SR", "BL", "BR", "TFL", "TFR", "TML", "TMR", "TBL", "TBR", "TC", "BC"]
-        case "2.0", "Stereo":
-            return ["FL", "FR"]
-        case "1.0", "Mono":
-            return ["C"]
-        default:
-            return []
-        }
-    }
-    
-    private func fetchSpeakerLabelsArray(layout: String) -> [String]? {
-        let labels = fetchSpeakerLabels(layout: layout)
-        return labels.isEmpty ? nil : labels
-    }
-    
     private func updateChannelWarning() {
         guard let outputDevice = audioDeviceVM.selectedOutputDevice,
               let inputDevice = audioDeviceVM.selectedInputDevice else {
@@ -1047,11 +1122,16 @@ struct SettingsView: View {
         }
         
         var warnings: [String] = []
-        let speakerCount = fetchSpeakerLabels(layout: selectedLayout).count
         
-        if outputDevice.maxOutputChannels < speakerCount && speakerCount > 0 {
-            warnings.append("Playback device only has \(outputDevice.maxOutputChannels) channels while layout requires \(speakerCount)")
+        // Use LayoutManager instead of local state
+        if let layout = layoutManager.getCurrentLayout() {
+            let speakerCount = layout.totalSpeakers
+            
+            if outputDevice.maxOutputChannels < speakerCount && speakerCount > 0 {
+                warnings.append("Playback device only has \(outputDevice.maxOutputChannels) channels while layout requires \(speakerCount)")
+            }
         }
+        
         if inputDevice.maxInputChannels < 2 {
             let suffix = inputDevice.maxInputChannels == 1 ? "" : "s"
             warnings.append("Recording device only has \(inputDevice.maxInputChannels) channel\(suffix); two are required")
