@@ -1,98 +1,206 @@
 # Earprint
 
-Earprint is a macOS application for capturing and processing binaural impulse responses.
-It is distributed as a Swift package with bundled Python scripts.
+Earprint is a professional macOS application for capturing and processing binaural impulse responses (HRIR/BRIR). It combines a modern SwiftUI interface with powerful Python-based signal processing to create personalized spatial audio profiles for headphones and room acoustics.
 
-## Repository layout
+## What is Earprint?
 
-- `Earprint/` – Swift package containing the macOS application
-- `Earprint/Scripts/` – Python tools used by the GUI and available as CLI utilities
-- `Earprint/Resources/EmbeddedPython/` – location for the embedded Python interpreter
-- `Earprint/Sources/Earprint/` - location for application files, views and view models
+Earprint transforms your headphones into an accurate speaker virtualization system by capturing how sound travels from speakers to your ears in your specific listening environment. Using binaural microphones and exponential sine sweep measurements, Earprint creates personalized Head-Related Impulse Responses (HRIRs) and Binaural Room Impulse Responses (BRIRs) that make headphones sound like speakers in a real room.
 
-## Building the app
+## Key Features
 
-The application is built with the Swift Package Manager. From the project root:
+### **Measurement & Capture**
+- Interactive capture wizard with step-by-step guidance
+- Support for multiple speaker layouts (stereo, 5.1, 7.1, Atmos)
+- Binaural microphone recording with real-time monitoring
+- Automated sweep signal generation and playback
+- Head tracking integration for dynamic measurements
 
-```bash
-cd Earprint
-swift build -c release
-```
+### **Advanced Processing**
+- Sophisticated impulse response processing pipeline
+- Room correction and acoustic compensation
+- Headphone equalization and frequency response matching
+- Multiple output formats (WAV, HeSuVi, Pro Tools AAX)
+- Customizable processing presets and user profiles
 
-`swift run Earprint` launches the GUI while developing. When distributing the app you must embed a Python runtime. Copy the official macOS distribution so that the directory tree matches the following structure:
+### **Professional Interface**
+- Native macOS SwiftUI application
+- Real-time visualization of frequency responses
+- Interactive charts and measurement analysis
+- Preset management for different rooms and setups
+- Comprehensive logging and debugging tools
 
-```text
-EmbeddedPython
-└── Python.framework
-    └── Versions
-        └── 3.9 -> 3.9.6
-```
+### **Cross-Platform Tools**
+- Command-line utilities for batch processing
+- Python API for custom workflows
+- Real-time convolution engine for testing
+- Comprehensive test suite and development tools
 
-As noted in `Resources/EmbeddedPython/README.md`, `bin/python3` should end up at
-`EarprintGUI.app/Contents/Resources/EmbeddedPython/Python.framework/Versions/3.9/bin/python3`.
+## System Requirements
 
-## Python environment
+- **macOS**: 13.5 or later
+- **Xcode**: 16.4 or later (for building from source)
+- **Python**: 3.9 or later
+- **Hardware**: Binaural microphones, audio interface, speakers
 
-The Python scripts require Python 3.9 or later with several third‑party packages.
-Typical dependencies include `numpy`, `scipy`, `matplotlib`, `tabulate`,
-`sounddevice` and `pyfftw`. Install them with `pip` before running the tools or
-executing the test suite.
+## Installation
 
-## Installing Python Dependencies
+### Option 1: Building from Source (Recommended for Development)
 
-1. **Create a virtual environment (recommended):**
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/n1299cb/Earprint.git
+   cd Earprint
+   ```
 
+2. **Open in Xcode:**
+   ```bash
+   open Earprint.xcodeproj
+   ```
+
+3. **Build and run:**
+   - Select the `Earprint` scheme in Xcode
+   - Choose **Product > Run** or press `⌘R`
+   - The app will build and launch automatically
+
+### Option 2: Command Line Build
+
+1. **Build with Xcode command line tools:**
+   ```bash
+   cd Earprint
+   xcodebuild -project Earprint.xcodeproj -scheme Earprint -configuration Release build
+   ```
+
+2. **Run the built application:**
+   ```bash
+   open build/Release/Earprint.app
+   ```
+
+## Python Environment Setup
+
+Earprint requires Python dependencies for its signal processing backend:
+
+### **Automatic Setup (Recommended)**
+The macOS app includes an embedded Python runtime. Dependencies are automatically managed when you first run the application.
+
+### **Manual Setup for Development**
+
+1. **Create a virtual environment:**
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
    ```
 
-2. **Install the packages:**
-
+2. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
 
-Alternatively, you can install the packages directly into the bundled Python framework used by the application:
+3. **Install additional macOS dependencies:**
+   ```bash
+   # Install PortAudio for audio device access
+   brew install portaudio
+   
+   # Reinstall Python audio dependencies
+   pip install -U -r requirements.txt
+   ```
 
-```bash
-Earprint/Resources/EmbeddedPython/Python.framework/Versions/3.9/bin/python3 -m pip install -r requirements.txt
+4. **Verify installation:**
+   ```bash
+   python3 -c "import sounddevice, json; print(json.dumps(sounddevice.query_devices()))"
+   ```
+
+## Repository Structure
+
+```
+Earprint/
+├── Earprint.xcodeproj/          # Xcode project file
+├── Earprint/                    # Main application source
+│   ├── Sources/                 # SwiftUI views and models
+│   ├── Resources/               # App resources and assets
+│   └── Info.plist              # App configuration
+├── Scripts/                     # Python processing tools
+│   ├── earprint.py             # Main processing pipeline
+│   ├── capture_wizard.py       # Interactive recording workflow
+│   ├── realtime_convolution.py # Real-time audio processing
+│   └── tests/                  # Python test suite
+├── Resources/
+│   └── EmbeddedPython/         # Bundled Python runtime
+├── data/                       # Sample measurements and demos
+└── docs/                       # Documentation
 ```
 
-Once the dependencies are installed you can run the test suite with `pytest`.
+## Quick Start
 
-## Command line tools
-
-The `Scripts` directory exposes a few utilities that can also be used outside the GUI:
-
-- `earprint.py` – full processing pipeline for turning recorded sweeps into HRIRs.
-  Invoke with `--dir_path <capture_dir>` and various options controlling equalisation and output.
-- `capture_wizard.py` – interactive console workflow for making new recordings.
-  Provide `--layout` and `--dir` to define the speaker layout and target folder.
-- `realtime_convolution.py` – offline convolver for testing BRIR files:
-  `python realtime_convolution.py input.wav output.wav hrir.wav --block_size 1024`.
-- `generate_layout.py` – helper that creates a capture folder and README listing
-  the expected sweep files.
-
-Each processing run also writes CSV data to the measurement's `plots`
-directory. These files contain frequency responses for visualization in the
-SwiftUI Charts view.
-
-## Running the tests
-
-The Python tests live under `Earprint/Scripts/tests`. After installing the
-required dependencies run:
+### **Try the Demo**
+Test Earprint without measurement hardware:
 
 ```bash
-pytest
+cd Scripts
+python earprint.py --test_signal=../data/sweep-6.15s-48000Hz-32bit-2.93Hz-24000Hz.pkl --dir_path=../data/demo
 ```
 
-The tests assume the same directory layout as the repository and rely on the
-packages mentioned above.
+This processes sample measurements and creates `hrir.wav` and `hesuvi.wav` files for testing with spatial audio software.
 
-## Preferences
+### **Create Your First Measurement**
 
-The Setup view lets you choose where measurements are stored. If you
-often work in the same folder, open **Settings** in the menu bar and set a
-default measurement directory. New sessions will start there, but you can
-override the location from Setup.
+1. **Launch Earprint** and connect your binaural microphones
+2. **Go to Setup tab** and configure your speaker layout
+3. **Use Capture Wizard** to record measurements for each speaker
+4. **Process measurements** in the Post-Processing tab
+5. **Export results** for use with your preferred spatial audio software
+
+## Command Line Tools
+
+Earprint includes several standalone utilities:
+
+- **`earprint.py`** - Complete processing pipeline
+- **`capture_wizard.py`** - Interactive recording workflow  
+- **`realtime_convolution.py`** - Audio convolution engine
+- **`generate_layout.py`** - Speaker layout generator
+
+Example usage:
+```bash
+python earprint.py --dir_path /path/to/measurements --output_format hesuvi
+python capture_wizard.py --layout stereo --dir /path/to/output
+```
+
+## Testing
+
+Run the comprehensive test suite:
+
+```bash
+cd Scripts
+python -m pytest tests/
+```
+
+## Troubleshooting
+
+### **Empty Device Lists**
+If audio devices don't appear:
+```bash
+brew install portaudio
+pip install -U -r requirements.txt
+```
+
+### **Python Module Errors**
+Ensure all dependencies are installed:
+```bash
+pip install -r requirements.txt
+```
+
+### **Build Issues**
+- Verify Xcode 16.4+ is installed
+- Clean build folder: **Product > Clean Build Folder**
+- Reset package dependencies if needed
+
+## Development
+
+For contributor setup and advanced development instructions, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+To build Pro Tools AAX plugins, see [docs/AAX_PLUGIN.md](docs/AAX_PLUGIN.md).
+
+## License
+
+Earprint is released under the MIT License. See [LICENSE](LICENSE) for details.
+
+Modifications and additions © 2025 Blaring Sound LLC are also licensed under the MIT License.
