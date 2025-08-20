@@ -8,17 +8,20 @@ struct EarprintApp: App {
     @StateObject private var audioDeviceVM = AudioDeviceViewModel()
     @StateObject private var recordingVM = RecordingViewModel()
     @StateObject private var workspaceManager = WorkspaceManager()
+    @StateObject private var guideManager = GuideManager()
     
     // MARK: - App State
     @AppStorage("selectedSection") private var lastSectionRaw: String = Section.workspace.rawValue
+    @AppStorage("hasCompletedFirstRun") private var hasCompletedFirstRun: Bool = false
     @State private var selectedSection: Section?
     @State private var showingSettings = false
+    @State private var showingFirstRun = false
     
     // MARK: - Basic App Storage for RecordingView
     @AppStorage("measurementDir") private var measurementDir: String = ""
     @AppStorage("testSignal") private var testSignal: String = ""
     
-    // MARK: - sidebarView
+    // MARK: - Views
     private var sidebarView: some View {
         List(Section.allCases, id: \.self, selection: $selectedSection) { section in
             NavigationLink(value: section) {
@@ -49,7 +52,16 @@ struct EarprintApp: App {
             } detail: {
                 detailView
             }
+            
+            .environmentObject(guideManager)
+            .withGuide(guideManager)
+            
             .onAppear {
+                // Check for first run
+                if !hasCompletedFirstRun {
+                    showingFirstRun = true
+                }
+                
                 // Set initial section if none selected
                 if selectedSection == nil {
                     selectedSection = Section(rawValue: lastSectionRaw) ?? .workspace
@@ -71,6 +83,9 @@ struct EarprintApp: App {
                 if !measurementDir.isEmpty {
                     recordingVM.validatePaths(measurementDir)
                 }
+                
+                // ADD THIS LINE:
+                guideManager.loadCompletedSteps()
             }
             .onChange(of: selectedSection) { newValue in
                 lastSectionRaw = newValue?.rawValue ?? Section.workspace.rawValue
@@ -85,9 +100,27 @@ struct EarprintApp: App {
                     processingVM: processingVM,
                     recordingVM: recordingVM
                 )
+                .environmentObject(configurationVM)
                 .environmentObject(workspaceManager)
                 .frame(minWidth: 800, minHeight: 600)
             }
+            .sheet(isPresented: $showingFirstRun) {
+                FirstRunExperienceView {
+                    hasCompletedFirstRun = true
+                    showingFirstRun = false
+                    selectedSection = .workspace
+                    guideManager.saveCompletedSteps()
+                    
+                    // Start guide here in App.swift where guideManager is available
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        guideManager.startGuide(.firstRun)
+                    }
+                }
+                .environmentObject(workspaceManager)
+                .environmentObject(configurationVM)
+            }
+            .environmentObject(guideManager)
+            .withGuide(guideManager)
         }
         .windowResizability(.contentSize)
         .windowToolbarStyle(.unified)
@@ -99,11 +132,47 @@ struct EarprintApp: App {
                 .keyboardShortcut(",", modifiers: .command)
             }
             
+            CommandGroup(after: .appSettings) {
+                Button("Tutorial...") {
+                    showingFirstRun = true
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+            }
+            CommandGroup(after: .help) {
+                Divider()
+                
+                Button("Setup Guide") {
+                    guideManager.startGuide(.firstRun)
+                }
+                .keyboardShortcut("?", modifiers: [.command, .shift])
+                
+                Button("Recording Guide") {
+                    guideManager.startGuide(.recording)
+                }
+                
+                Button("Processing Guide") {
+                    guideManager.startGuide(.processing)
+                }
+                
+                Button("Workspace Guide") {
+                    guideManager.startGuide(.workspace)
+                }
+                
+                if guideManager.isActive {
+                    Divider()
+                    Button("End Current Guide") {
+                        guideManager.endGuide()
+                    }
+                    .keyboardShortcut(.escape)
+                }
+            }
+            
             CommandGroup(replacing: .appTermination) {
                 Button("Quit Earprint") {
                     if configurationVM.isDirty {
                         configurationVM.saveConfiguration()
                     }
+                    guideManager.saveCompletedSteps()
                     NSApplication.shared.terminate(nil)
                 }
                 .keyboardShortcut("Q", modifiers: .command)
@@ -126,88 +195,17 @@ struct EarprintApp: App {
             WorkspaceView()
                 .environmentObject(workspaceManager)
         case .postProcessing:
-            PostProcessingView(processingVM: processingVM,
-                               measurementDir: $measurementDir,
-                               testSignal: $testSignal)
+            PostProcessingView(
+                processingVM: processingVM,
+                measurementDir: $measurementDir,
+                testSignal: $testSignal
+            )
             .environmentObject(workspaceManager)
         case .visualization:
             FrequencyVisualizationView(measurementDir: $measurementDir)
-                        .environmentObject(configurationVM)
-                        .environmentObject(workspaceManager)
+                .environmentObject(configurationVM)
+                .environmentObject(workspaceManager)
         }
-    }
-    
-    // MARK: - Workspace Helper Functions
-    
-    private func initializeWorkspacePaths() {
-        // Set measurement directory to current workspace if not already set
-        if measurementDir.isEmpty {
-            measurementDir = workspaceManager.currentWorkspace.path
-        }
-        
-        // Set test signal to workspace test signal if available
-        let workspaceTestSignal = workspaceManager.getTestSignalPath()
-        if testSignal.isEmpty && !workspaceTestSignal.isEmpty {
-            testSignal = workspaceTestSignal
-        }
-    }
-    
-    private func updateWorkspacePaths() {
-        // Update measurement directory to current workspace
-        measurementDir = workspaceManager.currentWorkspace.path
-        
-        // Update test signal to workspace test signal
-        let workspaceTestSignal = workspaceManager.getTestSignalPath()
-        if !workspaceTestSignal.isEmpty {
-            testSignal = workspaceTestSignal
-        }
-        
-        // Validate paths for recording
-        recordingVM.validatePaths(measurementDir)
-    }
-    
-    private func exportCurrentWorkspace() {
-        #if canImport(AppKit)
-        let panel = NSSavePanel()
-        panel.canCreateDirectories = true
-        panel.title = "Export Workspace"
-        panel.prompt = "Export"
-        panel.nameFieldStringValue = workspaceManager.workspaceName
-        
-        if panel.runModal() == .OK, let url = panel.url {
-            Task {
-                do {
-                    try await workspaceManager.exportWorkspace(to: url)
-                } catch {
-                    await MainActor.run {
-                        print("Export failed: \(error.localizedDescription)")
-                    }
-                }
-            }
-        }
-        #endif
-    }
-    
-    private func clearCurrentWorkspace() {
-        #if canImport(AppKit)
-        let alert = NSAlert()
-        alert.messageText = "Clear Workspace"
-        alert.informativeText = "This will permanently delete all files in the current workspace. This action cannot be undone."
-        alert.addButton(withTitle: "Clear")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        
-        if alert.runModal() == .alertFirstButtonReturn {
-            do {
-                let contents = try FileManager.default.contentsOfDirectory(at: workspaceManager.currentWorkspace, includingPropertiesForKeys: nil)
-                for item in contents {
-                    try FileManager.default.removeItem(at: item)
-                }
-            } catch {
-                print("Failed to clear workspace: \(error)")
-            }
-        }
-        #endif
     }
 }
 
@@ -227,39 +225,5 @@ enum Section: String, CaseIterable, Identifiable {
         case .postProcessing: return "wrench"
         case .visualization: return "chart.line.uptrend.xyaxis"
         }
-    }
-}
-
-// MARK: - Placeholder Views for missing implementations
-struct VisualizationView: View {
-    @ObservedObject var processingVM: ProcessingViewModel
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 60))
-                .foregroundColor(.accentColor)
-            
-            Text("Visualization")
-                .font(.largeTitle)
-                .fontWeight(.bold)
-            
-            Text("View frequency response graphs and analysis")
-                .font(.title3)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("• Frequency response charts")
-                Text("• Before/after comparisons")
-                Text("• Processing results analysis")
-                Text("• Export graphs and data")
-            }
-            .font(.body)
-            .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: 600)
-        .padding()
-        .navigationTitle("Visualization")
     }
 }

@@ -111,6 +111,9 @@ class WorkspaceManager: ObservableObject {
 
         // NOW do cleanup after current workspace is finalized
         cleanupEmptyWorkspacesOnBoot()
+        
+        // Load Test Signals
+        loadAvailableTestSignals()
     }
     
     // MARK: - Workspace Operations
@@ -762,5 +765,37 @@ enum TestSignalType: String, CaseIterable {
         case .wav: return "WAV Audio"
         case .pickle: return "Pickled Signal"
         }
+    }
+}
+
+
+extension WorkspaceManager {
+    /// Find test signal files in the current workspace
+    func getWorkspaceTestSignals() -> [String] {
+        let workspacePath = currentWorkspace.path
+        let fileManager = FileManager.default
+        
+        guard let contents = try? fileManager.contentsOfDirectory(atPath: workspacePath) else {
+            return []
+        }
+        
+        return contents
+            .filter { filename in
+                let ext = URL(fileURLWithPath: filename).pathExtension.lowercased()
+                let isAudioFile = ext == "wav" || ext == "pkl"
+                let looksLikeTestSignal = filename.lowercased().contains("sweep") ||
+                                         filename.lowercased().contains("test") ||
+                                         filename.lowercased().contains("signal")
+                return isAudioFile && looksLikeTestSignal
+            }
+            .map { filename in
+                URL(fileURLWithPath: workspacePath).appendingPathComponent(filename).path
+            }
+            .sorted()
+    }
+    
+    /// Check if the workspace contains any test signals
+    var hasWorkspaceTestSignals: Bool {
+        return !getWorkspaceTestSignals().isEmpty
     }
 }

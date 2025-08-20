@@ -9,30 +9,38 @@ struct FirstRunExperienceView: View {
     
     var body: some View {
         NavigationStack(path: $onboardingManager.navigationPath) {
-            WelcomeScreen(onboardingManager: onboardingManager)
-                .navigationDestination(for: OnboardingStep.self) { step in
-                    switch step {
-                    case .welcome:
-                        WelcomeScreen(onboardingManager: onboardingManager)
-                    case .workflow:
-                        WorkflowOverviewScreen(onboardingManager: onboardingManager)
-                    case .setup:
-                        SetupScreen(
-                            onboardingManager: onboardingManager,
-                            workspaceManager: workspaceManager,
-                            configurationVM: configurationVM
-                        )
-                    case .complete:
-                        CompletionScreen(onComplete: onComplete)
-                    }
+            WelcomeScreen(
+                onboardingManager: onboardingManager
+            )
+            .navigationDestination(for: OnboardingStep.self) { step in
+                switch step {
+                case .welcome:
+                    WelcomeScreen(
+                        onboardingManager: onboardingManager
+                    )
+                case .workflow:
+                    WorkflowOverviewScreen(
+                        onboardingManager: onboardingManager
+                    )
+                case .setup:
+                    SetupScreen(
+                        onboardingManager: onboardingManager,
+                        workspaceManager: workspaceManager,
+                        configurationVM: configurationVM
+                    )
+                case .complete:
+                    CompletionScreen(
+                        onComplete: onComplete
+                    )
                 }
+            }
         }
         .frame(width: 900, height: 700)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
-// MARK: - Onboarding Manager
+// MARK: - Onboarding Manager (unchanged)
 @MainActor
 class OnboardingManager: ObservableObject {
     @Published var navigationPath = NavigationPath()
@@ -66,7 +74,7 @@ enum OnboardingStep: Hashable, CaseIterable {
     }
 }
 
-// MARK: - Welcome Screen
+// MARK: - Welcome Screen (remove guideManager parameter)
 struct WelcomeScreen: View {
     @ObservedObject var onboardingManager: OnboardingManager
     
@@ -135,7 +143,7 @@ struct WelcomeScreen: View {
     }
 }
 
-// MARK: - Feature Row Component
+// MARK: - Feature Row Component (unchanged)
 struct FeatureRow: View {
     let icon: String
     let title: String
@@ -163,7 +171,7 @@ struct FeatureRow: View {
     }
 }
 
-// MARK: - Workflow Overview Screen
+// MARK: - Workflow Overview Screen (remove guideManager parameter)
 struct WorkflowOverviewScreen: View {
     @ObservedObject var onboardingManager: OnboardingManager
     
@@ -238,7 +246,7 @@ struct WorkflowOverviewScreen: View {
     }
 }
 
-// MARK: - Workflow Step Component
+// MARK: - Workflow Step Component (unchanged)
 struct WorkflowStep: View {
     let number: Int
     let icon: String
@@ -286,7 +294,7 @@ struct WorkflowStep: View {
     }
 }
 
-// MARK: - Setup Screen
+// MARK: - Setup Screen (remove guideManager parameter)
 struct SetupScreen: View {
     @ObservedObject var onboardingManager: OnboardingManager
     @ObservedObject var workspaceManager: WorkspaceManager
@@ -406,7 +414,6 @@ struct SetupScreen: View {
         
         // Create workspace (if needed)
         if !workspaceName.isEmpty {
-            // WorkspaceManager should handle creation
             workspaceManager.workspaceName = workspaceName
         }
         
@@ -416,15 +423,13 @@ struct SetupScreen: View {
     private func checkPythonEnvironment() {
         pythonStatus = .checking
         
-        // Simple check - in real implementation, you'd verify Python dependencies
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            // Simulate check result - you could integrate with actual Python environment checking
             pythonStatus = .ready
         }
     }
 }
 
-// MARK: - Python Status
+// MARK: - Python Status (unchanged)
 enum PythonStatus {
     case checking
     case ready
@@ -447,7 +452,7 @@ enum PythonStatus {
     }
 }
 
-// MARK: - Setup Card Component
+// MARK: - Setup Card Component (unchanged)
 struct SetupCard<Content: View>: View {
     let icon: String
     let title: String
@@ -475,9 +480,10 @@ struct SetupCard<Content: View>: View {
     }
 }
 
-// MARK: - Completion Screen
+// MARK: - Completion Screen (remove guideManager parameter)
 struct CompletionScreen: View {
     let onComplete: () -> Void
+    @State private var startGuideAfterCompletion = true
     
     var body: some View {
         VStack(spacing: 30) {
@@ -497,34 +503,28 @@ struct CompletionScreen: View {
                     .multilineTextAlignment(.center)
             }
             
-            // Next steps
-            VStack(spacing: 20) {
-                Text("Recommended next steps:")
-                    .font(.headline)
-                    .fontWeight(.medium)
-                
-                VStack(alignment: .leading, spacing: 16) {
-                    NextStepRow(
-                        number: 1,
-                        title: "Check your workspace",
-                        description: "Verify your project folder and settings",
-                        icon: "folder.badge.gearshape"
-                    )
+            // Guide option
+            VStack(spacing: 16) {
+                HStack {
+                    Image(systemName: "questionmark.circle")
+                        .foregroundColor(.blue)
                     
-                    NextStepRow(
-                        number: 2,
-                        title: "Set up recording equipment",
-                        description: "Connect binaural microphones and configure audio devices",
-                        icon: "headphones.circle"
-                    )
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Show Interactive Guide")
+                            .font(.headline)
+                        
+                        Text("Get a guided tour of the main interface")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                     
-                    NextStepRow(
-                        number: 3,
-                        title: "Start with the demo",
-                        description: "Try processing the included sample recordings",
-                        icon: "play.circle"
-                    )
+                    Spacer()
+                                
+                    Toggle("", isOn: $startGuideAfterCompletion)
+                        .labelsHidden()
                 }
+                .padding(16)
+                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
             }
             .padding(.horizontal, 40)
             
@@ -533,6 +533,7 @@ struct CompletionScreen: View {
             // Final action
             Button("Start Using Earprint") {
                 onComplete()
+                // Guide will be started from App.swift, not here
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -543,7 +544,50 @@ struct CompletionScreen: View {
     }
 }
 
-// MARK: - Next Step Row Component
+// Keep the other components unchanged...
+struct QuickActionCard: View {
+    let icon: String
+    let title: String
+    let description: String
+    let color: Color
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(color)
+                    .frame(width: 32, height: 32)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                    
+                    Text(description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(12)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.separator.opacity(0.5), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct NextStepRow: View {
     let number: Int
     let title: String
@@ -552,7 +596,6 @@ struct NextStepRow: View {
     
     var body: some View {
         HStack(spacing: 16) {
-            // Step number
             ZStack {
                 Circle()
                     .fill(.blue.opacity(0.1))
@@ -564,13 +607,11 @@ struct NextStepRow: View {
                     .foregroundColor(.blue)
             }
             
-            // Icon
             Image(systemName: icon)
                 .font(.title3)
                 .foregroundColor(.blue)
                 .frame(width: 24, height: 24)
             
-            // Content
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline)

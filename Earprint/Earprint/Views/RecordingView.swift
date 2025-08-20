@@ -13,18 +13,16 @@ struct RecordingView: View {
     @EnvironmentObject var workspaceManager: WorkspaceManager
     
     // MARK: - Recording Settings
-    @State private var testSignalPath: String = ""
     @State private var recordingType: RecordingType = .measurement
     @State private var outputFileName: String = ""
     @State private var useCustomName: Bool = false
     
     // MARK: - UI State
-    @State private var showingTestSignalPicker = false
     @State private var showingRecordingResults = false
     @State private var recordingResultsURL: URL?
     
     private var canStartRecording: Bool {
-        !testSignalPath.isEmpty &&
+        configurationVM.isSelectedTestSignalValid &&
         audioDeviceVM.selectedInputDevice != nil &&
         audioDeviceVM.selectedOutputDevice != nil &&
         !recordingVM.isRecording
@@ -72,7 +70,6 @@ struct RecordingView: View {
                 selectedLayoutName: $layoutManager.selectedLayoutName,
                 isRecording: processingVM.isRunning,
                 canStartRecording: canStartRecording,
-                finalOutputPath: finalOutputPath,
                 currentWorkspace: workspaceManager.workspaceName,
                 startRecordingAction: startRecording,
                 audioDeviceVM: audioDeviceVM
@@ -88,14 +85,13 @@ struct RecordingView: View {
                     
                     // Recording Configuration
                     RecordingConfigurationSection(
-                        testSignalPath: $testSignalPath,
                         outputFileName: $outputFileName,
                         useCustomName: $useCustomName,
                         recordingType: recordingType,
                         currentLayout: currentLayout,
-                        showingTestSignalPicker: $showingTestSignalPicker,
                         workspaceManager: workspaceManager
                     )
+                    .environmentObject(configurationVM)
                     
                     // Progress and Status
                     if processingVM.isRunning {
@@ -123,7 +119,6 @@ struct RecordingView: View {
         }
         .navigationTitle("Recording")
         .onAppear {
-            loadDefaults()
             layoutManager.refreshLayouts()
             refreshRecordings()
         }
@@ -133,13 +128,6 @@ struct RecordingView: View {
         .onReceive(NotificationCenter.default.publisher(for: .layoutChanged)) { _ in
                 validateCurrentLayout()
         }
-        .fileImporter(
-            isPresented: $showingTestSignalPicker,
-            allowedContentTypes: [.audio],
-            allowsMultipleSelection: false
-        ) { result in
-            handleTestSignalSelection(result)
-        }
         .sheet(isPresented: $showingRecordingResults) {
             if let url = recordingResultsURL {
                 RecordingResultsSheet(recordingURL: url, recordingVM: recordingVM)
@@ -148,47 +136,9 @@ struct RecordingView: View {
     }
     
     // MARK: - Helper Methods
-    private func loadDefaults() {
-        // Load default test signal from Scripts/data directory
-        if let scriptsRoot = Bundle.main.resourceURL?.appendingPathComponent("Scripts") {
-            let defaultTestSignalPath = scriptsRoot.appendingPathComponent("data/sweep-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav")
-            
-            if FileManager.default.fileExists(atPath: defaultTestSignalPath.path) {
-                testSignalPath = defaultTestSignalPath.path
-                print("✅ Loaded default test signal: \(defaultTestSignalPath.path)")
-            } else {
-                print("⚠️ Default test signal not found at: \(defaultTestSignalPath.path)")
-                
-                // Fallback to configuration if available
-                if !configurationVM.appConfiguration.defaultTestSignal.isEmpty {
-                    testSignalPath = configurationVM.appConfiguration.defaultTestSignal
-                    print("✅ Using test signal from configuration: \(testSignalPath)")
-                }
-            }
-        } else {
-            print("❌ Scripts directory not found in bundle")
-            
-            // Fallback to configuration
-            if !configurationVM.appConfiguration.defaultTestSignal.isEmpty {
-                testSignalPath = configurationVM.appConfiguration.defaultTestSignal
-                print("✅ Using test signal from configuration: \(testSignalPath)")
-            }
-        }
-    }
     
     private func refreshRecordings() {
         recordingVM.validatePaths(workspaceManager.currentWorkspace.path)
-    }
-    
-    private func handleTestSignalSelection(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            if let url = urls.first {
-                testSignalPath = url.path
-            }
-        case .failure(let error):
-            print("Test signal selection error: \(error)")
-        }
     }
     
     // MARK: - Validation method for RecordingView
@@ -241,7 +191,7 @@ struct RecordingView: View {
             recordingVM.startLayoutBasedRecording(
                 layout: layout,
                 measurementDir: workspaceManager.currentWorkspace.path,
-                testSignal: testSignalPath,
+                testSignal: configurationVM.selectedTestSignalPath,
                 inputDevice: inputDevice,
                 outputDevice: outputDevice,
                 channelMapping: audioDeviceVM.channelMapping
@@ -258,7 +208,7 @@ struct RecordingView: View {
             recordingVM.startStandardRecording(
                 type: recordingType,
                 measurementDir: workspaceManager.currentWorkspace.path,
-                testSignal: testSignalPath,
+                testSignal: configurationVM.selectedTestSignalPath,
                 outputFile: finalOutputPath,
                 inputDevice: inputDevice,
                 outputDevice: outputDevice
@@ -332,7 +282,7 @@ struct RecordingHeaderView: View {
     @Binding var selectedLayoutName: String
     let isRecording: Bool
     let canStartRecording: Bool
-    let finalOutputPath: String
+    // Remove: let finalOutputPath: String  // No longer needed in header
     let currentWorkspace: String
     let startRecordingAction: () -> Void
     @ObservedObject var audioDeviceVM: AudioDeviceViewModel
@@ -341,6 +291,20 @@ struct RecordingHeaderView: View {
     
     private var currentLayout: SpeakerLayout? {
         layoutManager.getCurrentLayout()
+    }
+    
+    // New computed property for recording info
+    private var recordingPassInfo: (count: Int, description: String) {
+        if recordingType == .measurement, let layout = currentLayout {
+            let groupCount = layout.groups.count
+            if groupCount > 1 {
+                return (groupCount, "\(groupCount) recording passes")
+            } else {
+                return (1, "Single recording")
+            }
+        } else {
+            return (1, "Single recording")
+        }
     }
     
     var body: some View {
@@ -360,6 +324,25 @@ struct RecordingHeaderView: View {
                 }
                 
                 Spacer()
+                
+                // Recording Pass Info (NEW - replaces file path info)
+                if canStartRecording || isRecording {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(recordingPassInfo.description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        if recordingPassInfo.count > 1 {
+                            Text("Sequential recording")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.1))
+                    .cornerRadius(6)
+                }
                 
                 // Audio Device Status Indicators
                 HStack(spacing: 12) {
@@ -421,7 +404,7 @@ struct RecordingHeaderView: View {
             if !isRecording {
                 VStack(spacing: 12) {
                     Picker("Recording Type", selection: $recordingType) {
-                        ForEach(RecordingType.allCases, id: \.self) { type in 
+                        ForEach(RecordingType.allCases, id: \.self) { type in
                             Label(type.rawValue, systemImage: type.icon)
                                 .tag(type)
                         }
@@ -438,12 +421,22 @@ struct RecordingHeaderView: View {
                                     .font(.headline)
                                 Spacer()
                                 
+                                // Show channel count and recording pass info
                                 if let layout = currentLayout {
-                                    HStack {
+                                    HStack(spacing: 8) {
                                         Text("\(layout.totalSpeakers) channels")
                                             .font(.caption)
                                             .foregroundColor(.secondary)
-                                                
+                                        
+                                        // Show recording pass count
+                                        Text("•")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        
+                                        Text("\(layout.groups.count) passes")
+                                            .font(.caption)
+                                            .foregroundColor(layout.groups.count > 1 ? .gray : .green)
+                                        
                                         // Show warning if layout exceeds device capabilities
                                         if let outputDevice = audioDeviceVM.selectedOutputDevice {
                                             let requiredChannels = layout.totalSpeakers
@@ -460,7 +453,7 @@ struct RecordingHeaderView: View {
                                     .cornerRadius(4)
                                 }
                             }
-                                    
+                            
                             Picker("Speaker Layout", selection: $selectedLayoutName) {
                                 ForEach(layoutManager.availableLayoutNames, id: \.self) { layoutName in
                                     if let layout = layoutManager.availableLayouts[layoutName] {
@@ -470,40 +463,20 @@ struct RecordingHeaderView: View {
                                 }
                             }
                             .pickerStyle(.menu)
-                                    
+                            
                             // Show layout validation warnings
                             if let outputDevice = audioDeviceVM.selectedOutputDevice,
-                                let layout = currentLayout {
+                               let layout = currentLayout {
                                 let requiredChannels = layout.totalSpeakers
                                 if outputDevice.maxOutputChannels < requiredChannels {
                                     HStack {
                                         Image(systemName: "exclamationmark.triangle.fill")
                                             .foregroundColor(.orange)
-                                            Text("Layout requires \(requiredChannels) channels but device only has \(outputDevice.maxOutputChannels)")
+                                        Text("Layout requires \(requiredChannels) channels but device only has \(outputDevice.maxOutputChannels)")
                                             .font(.caption)
                                             .foregroundColor(.orange)
                                     }
                                 }
-                            }
-                                    
-                            // Show expected recording files
-                            if let layout = currentLayout, layout.groups.count > 1 {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Recording sequence:")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        
-                                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), alignment: .leading, spacing: 4) {
-                                        ForEach(Array(layout.groups.enumerated()), id: \.offset) { index, group in
-                                            Text("\(group.speakers.joined(separator: ",")).wav")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                }
-                                .padding(8)
-                                .background(Color.orange.opacity(0.1))
-                                .cornerRadius(6)
                             }
                         }
                     }
@@ -535,46 +508,8 @@ struct RecordingHeaderView: View {
                         .multilineTextAlignment(.center)
                 }
                 
-                // Output Preview (when ready or recording)
-                if canStartRecording || isRecording {
-                    VStack(alignment: .leading, spacing: 4) {
-                        if recordingType == .measurement, let layout = currentLayout {
-                            if layout.groups.count > 1 {
-                                Text("Multiple files will be created for this layout:")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                
-                                ForEach(Array(layout.groups.enumerated()), id: \.offset) { index, group in
-                                    Text("\(group.speakers.joined(separator: ",")).wav")
-                                        .font(.system(.caption2, design: .monospaced))
-                                        .padding(4)
-                                        .background(Color.gray.opacity(0.1))
-                                        .cornerRadius(4)
-                                }
-                            } else {
-                                Text("Recording will be saved as:")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                
-                                Text(finalOutputPath)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .padding(8)
-                                    .background(Color.gray.opacity(0.1))
-                                    .cornerRadius(4)
-                            }
-                        } else {
-                            Text("Recording will be saved to workspace:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            
-                            Text(finalOutputPath)
-                                .font(.system(.caption, design: .monospaced))
-                                .padding(8)
-                                .background(Color.gray.opacity(0.1))
-                                .cornerRadius(4)
-                        }
-                    }
-                }
+                // REMOVE the output file preview section entirely from here
+                // (Keep it in the main body of RecordingView)
             }
         }
         .padding()
@@ -584,12 +519,10 @@ struct RecordingHeaderView: View {
 
 // MARK: - Recording Configuration Section
 struct RecordingConfigurationSection: View {
-    @Binding var testSignalPath: String
     @Binding var outputFileName: String
     @Binding var useCustomName: Bool
     let recordingType: RecordingType
     let currentLayout: SpeakerLayout?
-    @Binding var showingTestSignalPicker: Bool
     @ObservedObject var workspaceManager: WorkspaceManager
     
     var body: some View {
@@ -597,63 +530,12 @@ struct RecordingConfigurationSection: View {
             VStack(spacing: 16) {
                 // Test Signal
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Test Signal", systemImage: "waveform")
-                        .font(.headline)
-                    
-                    // Check if test signal is bundled and valid
-                    let isBundledSignal = !testSignalPath.isEmpty &&
-                        (testSignalPath.contains("/Scripts/data/") ||
-                         testSignalPath.contains("Bundle.main"))
-                    let isValidSignal = !testSignalPath.isEmpty &&
-                        FileManager.default.fileExists(atPath: testSignalPath)
-                    
-                    if isBundledSignal && isValidSignal {
-                        // For valid bundled signals, only show the Browse button
-                        HStack {
-                            Spacer()
-                            Button("Browse") {
-                                showingTestSignalPicker = true
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    } else {
-                        // For custom or missing signals, show the full TextField interface
-                        HStack {
-                            TextField("Select test signal file...", text: $testSignalPath)
-                                .textFieldStyle(.roundedBorder)
-                            
-                            Button("Browse") {
-                                showingTestSignalPicker = true
-                            }
-                            .buttonStyle(.bordered)
-                            
-                            // Remove test signals menu for now - implement when WorkspaceManager has this property
-                            // if !workspaceManager.testSignals.isEmpty {
-                            //     Menu("Presets") {
-                            //         ForEach(workspaceManager.testSignals) { signal in
-                            //             Button(signal.name) {
-                            //                 if let path = workspaceManager.copyTestSignalToWorkspace(signal) {
-                            //                     testSignalPath = path
-                            //                 }
-                            //             }
-                            //         }
-                            //     }
-                            //     .buttonStyle(.bordered)
-                            // }
-                        }
-                    }
-                    
-                    if !testSignalPath.isEmpty {
-                        if FileManager.default.fileExists(atPath: testSignalPath) {
-                            Label("Test signal ready", systemImage: "checkmark.circle")
-                                .foregroundColor(.green)
-                                .font(.caption)
-                        } else {
-                            Label("Test signal file not found", systemImage: "exclamationmark.triangle")
-                                .foregroundColor(.orange)
-                                .font(.caption)
-                        }
-                    }
+                    // Test Signal
+                    UnifiedTestSignalDropdown(
+                        title: "Test Signal",
+                        showDescription: false,
+                        recordingMode: true
+                    )
                 }
                 
                 Divider()

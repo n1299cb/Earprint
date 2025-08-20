@@ -651,6 +651,28 @@ extension LayoutPreset {
     }
 }
 
+extension ConfigurationViewModel {
+    /// Get the currently selected test signal path
+    var selectedTestSignalPath: String {
+        return appConfiguration.defaultTestSignal
+    }
+    
+    /// Check if the currently selected test signal is valid
+    var isSelectedTestSignalValid: Bool {
+        let path = appConfiguration.defaultTestSignal
+        return !path.isEmpty && FileManager.default.fileExists(atPath: path)
+    }
+    
+    /// Get a user-friendly name for the current test signal
+    var selectedTestSignalName: String {
+        let path = appConfiguration.defaultTestSignal
+        if path.isEmpty {
+            return "No test signal selected"
+        }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+}
+
 #else
 // Non-macOS stub implementation
 final class ConfigurationViewModel: ObservableObject {

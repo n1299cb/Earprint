@@ -250,56 +250,10 @@ struct SettingsView: View {
                             title: "Default Test Signal",
                             description: "The default audio file used for measurements"
                         ) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    if defaultTestSignal.isEmpty {
-                                        Text("Use workspace signal")
-                                            .foregroundColor(.secondary)
-                                        
-                                        let workspaceSignal = workspaceManager.getTestSignalPath()
-                                        Text(workspaceSignal.isEmpty ?
-                                             "No signal available" :
-                                             URL(fileURLWithPath: workspaceSignal).lastPathComponent)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    } else {
-                                        Text(URL(fileURLWithPath: defaultTestSignal).lastPathComponent)
-                                            .foregroundColor(.primary)
-                                        
-                                        Text(FileManager.default.fileExists(atPath: defaultTestSignal) ?
-                                             "Available" : "File not found")
-                                            .font(.caption)
-                                            .foregroundColor(FileManager.default.fileExists(atPath: defaultTestSignal) ? .green : .red)
-                                    }
-                                }
-                                
-                                Spacer()
-                                
-                                HStack(spacing: 8) {
-                                    Button("Browse") {
-                                        selectTestSignal()
-                                    }
-                                    .buttonStyle(.bordered)
-                                    
-                                    Button("Use Workspace") {
-                                        let workspaceSignal = workspaceManager.getTestSignalPath()
-                                        if !workspaceSignal.isEmpty {
-                                            defaultTestSignal = workspaceSignal
-                                            configurationVM.updateDefaultTestSignal(workspaceSignal)
-                                        }
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .disabled(workspaceManager.getTestSignalPath().isEmpty)
-                                    
-                                    if !defaultTestSignal.isEmpty {
-                                        Button("Clear") {
-                                            defaultTestSignal = ""
-                                            configurationVM.updateDefaultTestSignal("")
-                                        }
-                                        .buttonStyle(.bordered)
-                                    }
-                                }
-                            }
+                            UnifiedTestSignalDropdown(
+                                    title: "",
+                                    showDescription: false
+                            )
                         }
                     }
                 }
