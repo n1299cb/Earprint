@@ -94,8 +94,8 @@ struct RecordingView: View {
                     .environmentObject(configurationVM)
                     
                     // Progress and Status
-                    if processingVM.isRunning {
-                        RecordingProgressSection(processingVM: processingVM)
+                    if recordingVM.isRecording || recordingVM.recordingState != .idle {
+                        RecordingProgressSection(recordingVM: recordingVM)
                     }
                     
                     // Recent Recordings
@@ -595,42 +595,102 @@ struct RecordingConfigurationSection: View {
 
 // MARK: - Recording Progress Section
 struct RecordingProgressSection: View {
-    @ObservedObject var processingVM: ProcessingViewModel
+    @ObservedObject var recordingVM: RecordingViewModel
     
     var body: some View {
         GroupBox("Recording Progress") {
             VStack(spacing: 12) {
-                if let progress = processingVM.progress {
+                switch recordingVM.recordingState {
+                case .idle:
+                    HStack {
+                        Image(systemName: "pause.circle")
+                            .foregroundColor(.secondary)
+                        Text("Ready to record")
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    
+                case .recording(let progress, let remainingTime):
                     VStack(spacing: 8) {
                         HStack {
                             Text("Progress")
+                                .font(.caption)
                             Spacer()
-                            Text("\(Int(progress * 100))%")
+                            HStack(spacing: 8) {
+                                Text("\(Int(progress * 100))%")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                if let remaining = remainingTime {
+                                    Text("•")
+                                        .foregroundColor(.secondary)
+                                    Text("\(String(format: "%.1f", remaining))s left")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
                         }
-                        .font(.caption)
                         
                         ProgressView(value: progress)
                             .progressViewStyle(.linear)
-                    }
-                } else {
-                    HStack {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                            .scaleEffect(0.8)
                         
-                        Text("Recording in progress...")
-                            .font(.caption)
+                        HStack {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(.red)
+                                    .frame(width: 8, height: 8)
+                                Text("Recording...")
+                                    .font(.caption)
+                            }
+                            Spacer()
+                        }
                     }
-                }
-                
-                if let remainingTime = processingVM.remainingTime {
-                    Text("Estimated time remaining: \(Int(remainingTime))s")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    
+                case .completed(let outputFile):
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("Recording completed")
+                            .font(.caption)
+                        Spacer()
+                    }
+                    
+                case .error(let message):
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                        VStack(alignment: .leading) {
+                            Text("Recording failed")
+                                .font(.caption)
+                            Text(message)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+                    
+                case .recordingGroup(let currentIndex, let totalCount, let progress, let remainingTime):
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text("Recording \(currentIndex + 1) of \(totalCount)")
+                                .font(.caption)
+                            Spacer()
+                            if let remaining = remainingTime {
+                                Text("\(String(format: "%.1f", remaining))s left")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        if let progress = progress {
+                            ProgressView(value: progress)
+                                .progressViewStyle(.linear)
+                        }
+                    }
                 }
             }
             .padding()
         }
+        .animation(.easeInOut(duration: 0.3), value: recordingVM.recordingState)
     }
 }
 
