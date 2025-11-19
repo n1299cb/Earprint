@@ -80,6 +80,17 @@ struct RecordingView: View {
             // Main Content
             ScrollView {
                 VStack(spacing: 24) {
+                    // Progress and Status
+                    if recordingVM.isRecording || recordingVM.recordingState != .idle {
+                        RecordingProgressSection(recordingVM: recordingVM)
+                    }
+                    
+                    // Recent Recordings
+                    RecentRecordingsSection(
+                        recordingVM: recordingVM,
+                        workspaceManager: workspaceManager
+                    )
+                    
                     // Workspace Info
                     WorkspaceInfoSection(workspaceManager: workspaceManager)
                     
@@ -92,17 +103,6 @@ struct RecordingView: View {
                         workspaceManager: workspaceManager
                     )
                     .environmentObject(configurationVM)
-                    
-                    // Progress and Status
-                    if recordingVM.isRecording || recordingVM.recordingState != .idle {
-                        RecordingProgressSection(recordingVM: recordingVM)
-                    }
-                    
-                    // Recent Recordings
-                    RecentRecordingsSection(
-                        recordingVM: recordingVM,
-                        workspaceManager: workspaceManager
-                    )
                 }
                 .padding()
             }
@@ -602,95 +602,112 @@ struct RecordingProgressSection: View {
             VStack(spacing: 12) {
                 switch recordingVM.recordingState {
                 case .idle:
-                    HStack {
-                        Image(systemName: "pause.circle")
-                            .foregroundColor(.secondary)
-                        Text("Ready to record")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
+                    idleStateView
                     
                 case .recording(let progress, let remainingTime):
-                    VStack(spacing: 8) {
-                        HStack {
-                            Text("Progress")
-                                .font(.caption)
-                            Spacer()
-                            HStack(spacing: 8) {
-                                Text("\(Int(progress * 100))%")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                if let remaining = remainingTime {
-                                    Text("•")
-                                        .foregroundColor(.secondary)
-                                    Text("\(String(format: "%.1f", remaining))s left")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                        
-                        ProgressView(value: progress)
-                            .progressViewStyle(.linear)
-                        
-                        HStack {
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(.red)
-                                    .frame(width: 8, height: 8)
-                                Text("Recording...")
-                                    .font(.caption)
-                            }
-                            Spacer()
-                        }
-                    }
+                    recordingStateView(progress: progress, remainingTime: remainingTime)
                     
-                case .completed(let outputFile):
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                        Text("Recording completed")
-                            .font(.caption)
-                        Spacer()
-                    }
+                case .completed(_):
+                    completedStateView
                     
                 case .error(let message):
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.red)
-                        VStack(alignment: .leading) {
-                            Text("Recording failed")
-                                .font(.caption)
-                            Text(message)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                    }
+                    errorStateView(message: message)
                     
-                case .recordingGroup(let currentIndex, let totalCount, let progress, let remainingTime):
-                    VStack(spacing: 8) {
-                        HStack {
-                            Text("Recording \(currentIndex + 1) of \(totalCount)")
-                                .font(.caption)
-                            Spacer()
-                            if let remaining = remainingTime {
-                                Text("\(String(format: "%.1f", remaining))s left")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        if let progress = progress {
-                            ProgressView(value: progress)
-                                .progressViewStyle(.linear)
-                        }
-                    }
+                @unknown default:
+                    idleStateView
                 }
             }
             .padding()
         }
         .animation(.easeInOut(duration: 0.3), value: recordingVM.recordingState)
+    }
+    
+    // MARK: - State Views
+    
+    private var idleStateView: some View {
+        HStack {
+            Image(systemName: "pause.circle")
+                .foregroundColor(.secondary)
+            Text("Ready to record")
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+    }
+    
+    private func recordingStateView(progress: Double?, remainingTime: Double?) -> some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("Progress")
+                    .font(.caption)
+                Spacer()
+                progressInfoView(progress: progress, remainingTime: remainingTime)
+            }
+            
+            if let progress = progress {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+            }
+            
+            recordingIndicatorView
+        }
+    }
+    
+    private func progressInfoView(progress: Double?, remainingTime: Double?) -> some View {
+        HStack(spacing: 8) {
+            if let progress = progress {
+                let progressText = "\(Int(progress * 100))%"
+                Text(progressText)
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+            
+            if let remaining = remainingTime {
+                Text("•")
+                    .foregroundColor(.secondary)
+                let timeText = String(format: "%.1f", remaining) + "s left"
+                Text(timeText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+    
+    private var recordingIndicatorView: some View {
+        HStack {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(.red)
+                    .frame(width: 8, height: 8)
+                Text("Recording...")
+                    .font(.caption)
+            }
+            Spacer()
+        }
+    }
+    
+    private var completedStateView: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green)
+            Text("Recording completed")
+                .font(.caption)
+            Spacer()
+        }
+    }
+    
+    private func errorStateView(message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.red)
+            VStack(alignment: .leading) {
+                Text("Recording failed")
+                    .font(.caption)
+                Text(message)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+        }
     }
 }
 
