@@ -201,9 +201,12 @@ final class RecordingViewModel: ObservableObject {
             if isRoomRecording {
                 channels = 1  // Room recordings must be mono
             } else {
-                channels = configuration.outputChannels?.count ?? 2  // Default to stereo for measurements
+                channels = 2  // Default to stereo for measurements
             }
             
+            // DEBUG:
+            print("Swift passing devices - Input: '\(configuration.recordingDevice)', Output: '\(configuration.playbackDevice)'")
+        
             // Build args with CORRECT CLI arguments that match the Python backend
             let args = [
                 "--play", configuration.testSignal,
@@ -1196,8 +1199,8 @@ extension RecordingViewModel {
         let baseConfig = RecordingConfiguration(
             measurementDir: measurementDir,
             testSignal: testSignal,
-            playbackDevice: String(outputDevice.id),
-            recordingDevice: String(inputDevice.id),
+            playbackDevice: outputDevice.name,
+            recordingDevice: inputDevice.name,
             outputFile: nil,
             speakerLayout: layout.name,
             recordingGroup: nil,
@@ -1229,8 +1232,8 @@ extension RecordingViewModel {
         let configuration = RecordingConfiguration(
             measurementDir: measurementDir,
             testSignal: testSignal,
-            playbackDevice: String(outputDevice.id),
-            recordingDevice: String(inputDevice.id),
+            playbackDevice: outputDevice.name,
+            recordingDevice: inputDevice.name,
             outputFile: outputFile,
             speakerLayout: nil,
             recordingGroup: nil,

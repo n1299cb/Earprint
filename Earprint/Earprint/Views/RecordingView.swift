@@ -72,7 +72,8 @@ struct RecordingView: View {
                 canStartRecording: canStartRecording,
                 currentWorkspace: workspaceManager.workspaceName,
                 startRecordingAction: startRecording,
-                audioDeviceVM: audioDeviceVM
+                audioDeviceVM: audioDeviceVM,
+                recordingVM: recordingVM
             )
             
             Divider()
@@ -80,10 +81,10 @@ struct RecordingView: View {
             // Main Content
             ScrollView {
                 VStack(spacing: 24) {
-                    // Progress and Status
-                    if recordingVM.isRecording || recordingVM.recordingState != .idle {
-                        RecordingProgressSection(recordingVM: recordingVM)
-                    }
+//                    // Progress and Status
+//                    if recordingVM.isRecording || recordingVM.recordingState != .idle {
+//                        RecordingProgressSection(recordingVM: recordingVM)
+//                    }
                     
                     // Recent Recordings
                     RecentRecordingsSection(
@@ -286,6 +287,7 @@ struct RecordingHeaderView: View {
     let currentWorkspace: String
     let startRecordingAction: () -> Void
     @ObservedObject var audioDeviceVM: AudioDeviceViewModel
+    @ObservedObject var recordingVM: RecordingViewModel
     
     @StateObject private var layoutManager = LayoutManager.shared
     
@@ -485,31 +487,11 @@ struct RecordingHeaderView: View {
             
             // Recording Button
             VStack(spacing: 8) {
-                Button(action: startRecordingAction) {
-                    HStack {
-                        Image(systemName: isRecording ? "stop.circle.fill" : "record.circle")
-                            .font(.title2)
-                        
-                        Text(isRecording ? "Stop Recording" : "Start Recording")
-                            .font(.headline)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(isRecording ? Color.red : Color.accentColor)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
-                }
-                .disabled(isRecording ? false : !canStartRecording)
-                
-                if !canStartRecording && !isRecording {
-                    Text("Configure audio devices and test signal")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                
-                // REMOVE the output file preview section entirely from here
-                // (Keep it in the main body of RecordingView)
+                RecordingButtonWithProgress(
+                    recordingVM: recordingVM,
+                    canStartRecording: canStartRecording,
+                    startAction: startRecordingAction
+                )
             }
         }
         .padding()
@@ -707,6 +689,168 @@ struct RecordingProgressSection: View {
                     .foregroundColor(.secondary)
             }
             Spacer()
+        }
+    }
+}
+
+// MARK: - Recording Button with Progress
+struct RecordingButtonWithProgress: View {
+    @ObservedObject var recordingVM: RecordingViewModel
+    let canStartRecording: Bool
+    let startAction: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            Button(action: buttonAction) {
+                ZStack {
+                    // Background progress ring
+                    progressRing
+                    
+                    // Button content
+                    buttonContent
+                }
+            }
+            .buttonStyle(.plain)
+            .frame(width: 120, height: 120)
+            .background(buttonBackground)
+            .clipShape(Circle())
+            .shadow(radius: isRecording ? 8 : 4)
+            .disabled(!canStartRecording && !isRecording)
+            
+            statusText
+        }
+    }
+    
+    // MARK: - Computed Properties
+    
+    private var isRecording: Bool {
+        if case .recording = recordingVM.recordingState {
+            return true
+        }
+        return false
+    }
+    
+    @ViewBuilder
+    private var progressRing: some View {
+        if case .recording(let progress, _) = recordingVM.recordingState,
+           let progress = progress {
+            Circle()
+                .stroke(Color.red.opacity(0.2), lineWidth: 4)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(Color.red, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.linear(duration: 0.3), value: progress)
+        }
+    }
+    
+    private var buttonContent: some View {
+        VStack(spacing: 8) {
+            Image(systemName: buttonIcon)
+                .font(.system(size: 30))
+            
+            Text(buttonText)
+                .font(.headline)
+            
+            progressInfo
+        }
+        .frame(width: 110, height: 110)
+    }
+    
+    @ViewBuilder
+    private var progressInfo: some View {
+        if case .recording(let progress, let remainingTime) = recordingVM.recordingState {
+            if let progress = progress {
+                Text("\(Int(progress * 100))%")
+                    .font(.caption)
+                    .fontWeight(.medium)
+            }
+            if let remaining = remainingTime {
+                Text("\(String(format: "%.1f", remaining))s")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+    
+    private var buttonIcon: String {
+        switch recordingVM.recordingState {
+        case .recording:
+            return "stop.circle.fill"
+        case .completed:
+            return "checkmark.circle.fill"
+        case .error:
+            return "exclamationmark.triangle.fill"
+        default:
+            return "record.circle"
+        }
+    }
+    
+    private var buttonText: String {
+        switch recordingVM.recordingState {
+        case .recording:
+            return "Recording..."
+        case .completed:
+            return "Complete"
+        case .error:
+            return "Error"
+        default:
+            return "Start Recording"
+        }
+    }
+    
+    private var buttonBackground: Color {
+        switch recordingVM.recordingState {
+        case .recording:
+            return Color.red.opacity(0.1)
+        case .completed:
+            return Color.green.opacity(0.1)
+        case .error:
+            return Color.orange.opacity(0.1)
+        default:
+            return canStartRecording ? Color.accentColor.opacity(0.1) : Color.gray.opacity(0.1)
+        }
+    }
+    
+    @ViewBuilder
+    private var statusText: some View {
+        switch recordingVM.recordingState {
+        case .idle:
+            if !canStartRecording {
+                Text("Configure audio devices and test signal")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        case .recording:
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(.red)
+                    .frame(width: 8, height: 8)
+                Text("Recording in progress")
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+        case .completed:
+            Text("Recording saved successfully")
+                .font(.caption)
+                .foregroundColor(.green)
+        case .error(let message):
+            Text(message)
+                .font(.caption)
+                .foregroundColor(.red)
+        @unknown default:
+            EmptyView()
+        }
+    }
+    
+    // MARK: - Actions
+    
+    private func buttonAction() {
+        if isRecording {
+            recordingVM.stopRecording()
+        } else {
+            startAction()
         }
     }
 }
