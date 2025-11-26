@@ -23,7 +23,7 @@ except OSError:  # pragma: no cover - depends on system libs
     )
 from utils import read_wav, write_wav
 import numpy as np
-from threading import Thread
+from threading import Thread, Event
 import argparse
 import time
 from typing import Callable, Optional
@@ -64,7 +64,7 @@ class DeviceNotFoundError(Exception):
         super().__init__(message)
 
 
-def record_target(file_path, length, fs, channels=2, append=False, output_file=None, report_file=None):
+def record_target(file_path, length, fs, channels=2, append=False, output_file=None, report_file=None, playback_done_event=None):
     """Records audio and writes it to a file.
 
     Args:
@@ -80,8 +80,36 @@ def record_target(file_path, length, fs, channels=2, append=False, output_file=N
     Returns:
         None
     """
-    recording = sd.rec(length, samplerate=fs, channels=channels, blocking=True)
-    recording = np.transpose(recording)
+    try:
+        
+        # Use non-blocking mode to avoid blocking issues
+        recording = sd.rec(length, samplerate=fs, channels=channels, blocking=False)
+        duration = length / fs
+        
+        # Manual wait loop - DO NOT call sd.wait() as it conflicts with main thread
+        # Wait for the recording duration plus small buffer
+        import time
+        start_time = time.time()
+        while time.time() - start_time < duration + 0.5:
+            time.sleep(0.1)
+        
+        
+        # CRITICAL: Wait for playback to complete before processing
+        # Using Event synchronization to ensure playback finished
+        if playback_done_event:
+            playback_done_event.wait(timeout=5.0)
+        
+        # Get the transposed data
+        recording = np.transpose(recording)
+        
+        # Small delay for PortAudio internal cleanup
+        time.sleep(0.05)
+        
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        raise
+    
     peak = np.max(np.abs(recording))
     max_gain = 20 * np.log10(peak) if peak > 0 else -np.inf
     headroom = -max_gain
@@ -120,6 +148,7 @@ def record_target(file_path, length, fs, channels=2, append=False, output_file=N
             f.write(f"Noise floor: {noise_floor:.1f} dBFS\n")
             f.write(f'Clipping: {"yes" if peak >= 1.0 else "no"}\n')
             f.write(f'Excess noise: {"yes" if noise_floor > -50 else "no"}\n')
+    
 
 
 def get_host_api_names():
@@ -143,6 +172,16 @@ def get_device(device_name, kind, host_api=None, min_channels=1):
         raise TypeError("Device name is required and cannot be None")
     if kind is None:
         raise TypeError("Kind is required and cannot be None")
+        
+    # DEBUG:
+    print(f"Searching for {kind} device: '{device_name}'")
+    devices = sd.query_devices()
+    for i, device in enumerate(devices):
+        if kind == "input" and device['max_input_channels'] > 0:
+            print(f"  Available input {i}: '{device['name']}'")
+        elif kind == "output" and device['max_output_channels'] > 0:
+            print(f"  Available output {i}: '{device['name']}'")
+    
     # Available host APIs
     host_api_names = get_host_api_names()
 
@@ -184,6 +223,9 @@ def get_device(device_name, kind, host_api=None, min_channels=1):
                 host_api=host_api,
                 min_channels=min_channels,
             )
+        # DEBUG
+        print(f"Found device '{device_name}': {device['max_input_channels']} input channels, need {min_channels}")
+
         if device[f"max_{kind}_channels"] < min_channels:
             # Channel count not satisfied
             raise DeviceNotFoundError(
@@ -196,11 +238,13 @@ def get_device(device_name, kind, host_api=None, min_channels=1):
             )
     else:
         # Host API not in the name and host API is not given as parameter
-        host_api_preference = [x for x in ["DirectSound", "MME", "WASAPI"] if x in host_api_names]
+        host_api_preference = [x for x in ["Core Audio", "DirectSound", "MME", "WASAPI"] if x in host_api_names]
         for host_api_name in host_api_preference:
             # Looping in the order of preference
             try:
                 device = sd.query_devices(f"{device_name} {host_api_name}", kind=kind)
+                # DEBUG
+                print(f"Found device '{device_name}': {device['max_input_channels']} input channels, need {min_channels}")
                 if device[f"max_{kind}_channels"] >= min_channels:
                     break
                 else:
@@ -238,7 +282,7 @@ def get_devices(input_device=None, output_device=None, host_api=None, min_channe
     if input_device is None:
         # Not given, use default
         input_device = devices[sd.default.device[0]]["name"]
-    input_device = get_device(input_device, "input", host_api=host_api)
+    input_device = get_device(input_device, "input", host_api=host_api, min_channels=2)
 
     # Select output device
     if output_device is None:
@@ -267,11 +311,22 @@ def set_default_devices(input_device, output_device):
     return input_device_str, output_device_str
 
 
+def _safe_record_target(file_path, length, fs, channels=2, append=False, output_file=None, report_file=None, playback_done_event=None):
+    """Wrapper for record_target that catches and reports exceptions."""
+    try:
+        record_target(file_path, length, fs, channels, append, output_file, report_file, playback_done_event)
+    except Exception as exc:
+        print(f"\n❌ RECORDING THREAD ERROR: {exc}", flush=True)
+        import traceback
+        traceback.print_exc()
+        raise
+
+
 def play_and_record(
     play: Optional[str] = None,
     record: Optional[str] = None,
-    input_device: Optional[int] = None,
-    output_device: Optional[int] = None,
+    input_device: Optional[str] = None,
+    output_device: Optional[str] = None,
     host_api: Optional[str] = None,
     channels: int = 2,
     append: bool = False,
@@ -303,24 +358,27 @@ def play_and_record(
         base = os.path.splitext(os.path.basename(output_file or record))[0]
         report_file = os.path.join(out_dir, f"{base}_report.txt")
 
-    # Validate speaker layout from filename
-    speaker_names = os.path.splitext(out_file)[0].split(",")
-    if len(speaker_names) != channels:
-        print(f"Warning: {len(speaker_names)} speaker labels in filename, but {channels} output channels specified.")
-        layout_name = None
-        expected_order = None
-        for name, order in SMPTE_ORDER.items():
-            if len(order) == channels:
-                layout_name = name
-                expected_order = ",".join(SPEAKER_NAMES[i] for i in order)
-                break
-        if layout_name:
-            print(f"Expected SMPTE layout {layout_name} order:\n  {expected_order}")
-        else:
-            print("No matching SMPTE layout for the given channel count.")
+    # Validate speaker layout from filename (skip for headphones.wav)
+    base_name = os.path.splitext(out_file)[0]
+    if base_name.lower() != "headphones":
+        speaker_names = base_name.split(",")
+        if len(speaker_names) != channels:
+            print(f"Warning: {len(speaker_names)} speaker labels in filename, but {channels} output channels specified.")
+            layout_name = None
+            expected_order = None
+            for name, order in SMPTE_ORDER.items():
+                if len(order) == channels:
+                    layout_name = name
+                    expected_order = ",".join(SPEAKER_NAMES[i] for i in order)
+                    break
+            if layout_name:
+                print(f"Expected SMPTE layout {layout_name} order:\n  {expected_order}")
+            else:
+                print("No matching SMPTE layout for the given channel count.")
 
     # Read playback file
-    fs, data = read_wav(play)
+    fs, data = read_wav(play, expand=True)  # expand=True ensures mono files become 2D arrays
+    print(f"Audio file shape: {data.shape}, n_channels: {data.shape[0]}")
     n_channels = data.shape[0]
 
     # Find and set devices as default
@@ -332,15 +390,18 @@ def play_and_record(
     print(f'Input device:  "{input_device_str}"')
     print(f'Output device: "{output_device_str}"')
 
+    # Create synchronization event for recording thread
+    playback_done = Event()
+    
     recorder = Thread(
-        target=record_target,
-        args=(record, data.shape[1], fs),
-        kwargs={
-            "channels": channels,
-            "append": append,
-            "output_file": output_file,
-            "report_file": report_file,
-        },
+        target=lambda: _safe_record_target(
+            record, data.shape[1], fs,
+            channels=channels,
+            append=append,
+            output_file=output_file,
+            report_file=report_file,
+            playback_done_event=playback_done
+        )
     )
     recorder.start()
     duration = data.shape[1] / fs
@@ -357,9 +418,35 @@ def play_and_record(
             break
         time.sleep(0.1)
     sd.wait()
+    
+    # CRITICAL: Signal recording thread that playback is done
+    playback_done.set()
+    
+    # CRITICAL: Stop playback stream explicitly
+    try:
+        sd.stop()
+    except Exception:
+        pass
+    
+    # Wait for playback stream to fully terminate
+    time.sleep(0.2)
+    
     recorder.join()
     if progress_callback:
         progress_callback(1.0, 0.0)
+    
+    # CRITICAL: Final cleanup - ensure ALL streams are stopped
+    # Call stop multiple times to catch any lingering streams
+    for i in range(3):
+        try:
+            sd.stop()
+            time.sleep(0.05)
+        except Exception:
+            pass
+    
+    # Final delay to ensure complete PortAudio cleanup before process exits
+    # or before next play_and_record call in capture_wizard
+    time.sleep(0.3)
 
 
 def create_cli():

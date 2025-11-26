@@ -37,6 +37,7 @@ def run_capture(
     prompt_fn: Callable[[str], Any] = input,
     message_fn: Callable[[str], Any] = print,
     progress_fn: Optional[Callable[[float, float], None]] = None,
+    auto_start: bool = False,
     **rec_kwargs: Any,
 ) -> None:
     """Run interactive capture for each speaker group.
@@ -45,12 +46,82 @@ def run_capture(
     used to display progress messages. ``progress_fn`` receives progress updates
     for GUI display. All callbacks default to console implementations so the
     function can be reused in a GUI context by supplying custom callbacks.
+    
+    When ``auto_start`` is True, prompts are skipped and recordings start
+    immediately - useful for GUI integration.
     """
 
     message_fn(f"\nRecording layout '{layout_name}' into {out_dir}\n")
     os.makedirs(out_dir, exist_ok=True)
 
-    prompt_fn("Insert binaural microphones and wear headphones.\n" "Press Enter to record headphone response...")
+    # Validate devices before starting to prevent PortAudio crashes
+    try:
+        import sounddevice as sd
+        input_dev = rec_kwargs.get('input_device')
+        output_dev = rec_kwargs.get('output_device')
+        
+        # Get device info
+        if input_dev is None:
+            input_device_info = sd.query_devices(sd.default.device[0], 'input')
+        else:
+            try:
+                input_device_info = sd.query_devices(input_dev, 'input')
+            except Exception:
+                # Try as device name
+                devices = sd.query_devices()
+                input_device_info = None
+                for idx, dev in enumerate(devices):
+                    if dev['name'] == input_dev or str(idx) == str(input_dev):
+                        if dev['max_input_channels'] > 0:
+                            input_device_info = dev
+                            break
+                if input_device_info is None:
+                    message_fn(f"⚠️  Could not find input device: {input_dev}")
+                    return
+        
+        if output_dev is not None:
+            try:
+                output_device_info = sd.query_devices(output_dev, 'output')
+            except Exception:
+                devices = sd.query_devices()
+                output_device_info = None
+                for idx, dev in enumerate(devices):
+                    if dev['name'] == output_dev or str(idx) == str(output_dev):
+                        if dev['max_output_channels'] > 0:
+                            output_device_info = dev
+                            break
+                if output_device_info is None:
+                    message_fn(f"⚠️  Could not find output device: {output_dev}")
+                    return
+        
+        # Check if input device supports stereo (2 channels) for binaural recording
+        max_input_channels = input_device_info['max_input_channels']
+        if max_input_channels < 2:
+            error_msg = (
+                f"\n⚠️  ERROR: Input device '{input_device_info['name']}' only has {max_input_channels} channel(s).\n"
+                f"\n"
+                f"Binaural recording requires 2 input channels (left and right ear microphones).\n"
+                f"Your current device is MONO (1 channel).\n"
+                f"\n"
+                f"Please select a STEREO (2-channel) input device in the Earprint app settings.\n"
+            )
+            message_fn(error_msg)
+            return
+        
+        message_fn(f"✓ Input device: {input_device_info['name']} ({max_input_channels} channels)")
+        
+    except Exception as exc:
+        message_fn(f"⚠️  Device validation failed: {exc}")
+        import traceback
+        traceback.print_exc()
+        return
+
+    # Headphone recording - always 2 channels for binaural microphones
+    if not auto_start:
+        prompt_fn("Insert binaural microphones and wear headphones.\n" "Press Enter to record headphone response...")
+    else:
+        message_fn("Starting headphone response recording...")
+    
     try:
         recorder.play_and_record(
             play=stereo_sweep,
@@ -63,12 +134,22 @@ def run_capture(
         message_fn(f"\n⚠️  Recording failed: {exc}")
         return
 
+    # Speaker group recordings
     for group in groups:
         filename = ",".join(group) + ".wav"
+        # Always use stereo sweep for groups with >1 speaker, mono for single speakers
         sweep = stereo_sweep if len(group) > 1 else mono_sweep
-        channels = len(group)
-        prompt = f"\nPosition for {filename} and press Enter to start recording..."
-        prompt_fn(prompt)
+        
+        # Recording channels should always be 2 for binaural microphones
+        # regardless of how many speakers are playing
+        channels = 2
+        
+        if not auto_start:
+            prompt = f"\nPosition for {filename} and press Enter to start recording..."
+            prompt_fn(prompt)
+        else:
+            message_fn(f"\nRecording {filename}...")
+        
         try:
             recorder.play_and_record(
                 play=sweep,
@@ -110,6 +191,11 @@ def main() -> None:
         action="store_true",
         help="Print recording progress updates for GUI integration",
     )
+    parser.add_argument(
+        "--auto-start",
+        action="store_true",
+        help="Skip interactive prompts and start recordings immediately (for GUI use)",
+    )
     args = parser.parse_args()
 
     progress_fn: Optional[Callable[[float, float], None]]
@@ -134,6 +220,7 @@ def main() -> None:
         output_device=args.output_device,
         host_api=args.host_api,
         progress_fn=progress_fn,
+        auto_start=args.auto_start,
     )
 
 

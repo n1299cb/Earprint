@@ -177,7 +177,9 @@ final class RecordingViewModel: ObservableObject {
             "--layout", configuration.speakerLayout ?? "2.0",
             "--dir", configuration.measurementDir,
             "--input_device", configuration.recordingDevice,
-            "--output_device", configuration.playbackDevice
+            "--output_device", configuration.playbackDevice,
+            "--auto-start",    // skips interactive prompts for GUI
+            "--print_progress"
         ]
         
         // Add custom test signals if specified and not default
@@ -277,6 +279,23 @@ final class RecordingViewModel: ObservableObject {
     private func processRecordingOutput(_ output: String) {
         print("Recording output: \(output)")
         parseRecordingProgressFromOutput(output)
+        
+        // Parse capture_wizard.py status messages
+        if output.contains("Recording layout") {
+            recordingState = .recording(progress: 0.0, remainingTime: nil)
+        } else if output.contains("Insert binaural microphones") {
+            recordingState = .recording(progress: 0.1, remainingTime: nil)
+        } else if output.contains("Position for") {
+            recordingState = .recording(progress: 0.3, remainingTime: nil)
+        } else if output.contains("✅ Capture completed") {
+            recordingState = .completed(outputFile: "Capture completed")
+            // capture_wizard.py completed, reset sequential state
+            sequentialState = .completed
+            currentRecordingConfiguration = nil
+            remainingGroups = []
+        } else if output.contains("⚠️  Recording failed") {
+            recordingState = .error("Recording failed")
+        }
     }
 
     private func parseRecordingProgressFromOutput(_ output: String) {
@@ -324,11 +343,22 @@ final class RecordingViewModel: ObservableObject {
     private func recordingTerminated(with status: Int32) {
         recordingTimer?.invalidate()
         recordingTimer = nil
+        
+        // Check if this was capture_wizard.py (handles its own sequencing)
+        let wasCaptureWizard = recordingProcess?.arguments?.contains { $0.contains("capture_wizard") } ?? false
+        
         recordingProcess = nil
         
         if status == 0 {
-            // Check if this is part of a sequential recording
-            if case .recordingGroup = sequentialState {
+            // capture_wizard.py handles all groups internally, so just complete
+            if wasCaptureWizard {
+                recordingState = .completed(outputFile: "Capture completed")
+                sequentialState = .completed  // Mark sequence as done
+                currentRecordingConfiguration = nil
+                remainingGroups = []
+            }
+            // Check if this is part of a sequential recording (using recorder.py per group)
+            else if case .recordingGroup = sequentialState {
                 onGroupRecordingCompleted()
             } else {
                 recordingState = .completed(outputFile: "Recording completed")
