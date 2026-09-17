@@ -17,7 +17,7 @@ class ProcessingViewModel:
             settings.measurement_dir,
         ]
         if settings.test_signal:
-            args.extend(["--input", settings.test_signal])
+            args.extend(["--test_signal", settings.test_signal])
         if settings.decay_time:
             args.extend(["--decay", settings.decay_time])
         if settings.target_level:

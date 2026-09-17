@@ -127,7 +127,7 @@ def record_target(file_path, length, fs, channels=2, append=False, output_file=N
             n = recording.shape[1] - data.shape[1]
             data = np.pad(data, [(0, 0), (0, n)])
         elif data.shape[1] > recording.shape[1]:
-            recording = np.pad(data, [(0, 0), (0, data.shape[1] - recording.shape[1])])
+            recording = np.pad(recording, [(0, 0), (0, data.shape[1] - recording.shape[1])])
         # Add recording to the end of the existing data
         recording = np.vstack([data, recording])
     if output_file:

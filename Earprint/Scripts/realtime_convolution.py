@@ -282,7 +282,7 @@ def convolve_file(
     data, fs_in = sf.read(input_wav, always_2d=True)
     if fs_in != fs:
         raise ValueError("Sampling rate mismatch")
-    engine = RealTimeConvolver(hrir, block_size)
+    engine = RealTimeConvolver(hrir, block_size=block_size)
     out = []
     idx = 0
     data = np.transpose(data)

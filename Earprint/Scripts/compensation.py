@@ -34,8 +34,6 @@ def apply_x_curve(hrir, inverse=False, curve_type=X_CURVE_DEFAULT_TYPE):
     curve_type: str
         Which curve profile from :data:`constants.X_CURVE_TYPES` to use.
     """
-    if not settings.apply_x_curve_compensation and not inverse:
-        return
 
     if curve_type not in X_CURVE_TYPES:
         raise ValueError(f"Unknown X-Curve type: {curve_type}")

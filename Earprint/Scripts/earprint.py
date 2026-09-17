@@ -44,6 +44,7 @@ def main(
     tilt=0.0,
     do_room_correction=True,
     do_headphone_compensation=True,
+    headphone_file=None,
     do_diffuse_field_compensation=settings.apply_diffuse_field_compensation,
     head_ms=1,
     jamesdsp=False,
@@ -114,7 +115,7 @@ def main(
     hp_left, hp_right = None, None
     if do_headphone_compensation:
         print("Running headphone compensation...")
-        hp_left, hp_right = headphone_compensation(estimator, dir_path, comment=metadata_comment)
+        hp_left, hp_right = headphone_compensation(estimator, dir_path, comment=metadata_comment, headphone_file=headphone_file)
 
     # Equalization
     eq_left, eq_right = None, None
@@ -428,7 +429,7 @@ def equalization(estimator, dir_path):
     return left_fr, right_fr
 
 
-def headphone_compensation(estimator, dir_path, comment=None):
+def headphone_compensation(estimator, dir_path, comment=None, headphone_file=None):
     """Equalizes HRIR tracks with headphone compensation measurement.
 
     Args:
@@ -440,7 +441,8 @@ def headphone_compensation(estimator, dir_path, comment=None):
     """
     # Read WAV file
     hp_irs = HRIR(estimator)
-    hp_irs.open_recording(os.path.join(dir_path, "headphones.wav"), speakers=["FL", "FR"])
+    hp_path = headphone_file if headphone_file else os.path.join(dir_path, "headphones.wav")
+    hp_irs.open_recording(hp_path, speakers=["FL", "FR"])
     hp_irs.write_wav(os.path.join(dir_path, "headphone-responses.wav"), comment=comment)
 
     # Frequency responses
@@ -682,6 +684,47 @@ def create_cli():
         help="Skip headphone compensation.",
     )
     arg_parser.add_argument(
+        "--compensation",
+        action="store_true",
+        help="Enable headphone compensation. Accepted for GUI compatibility; compensation is on by default.",
+    )
+    arg_parser.add_argument(
+        "--headphones",
+        type=str,
+        dest="headphone_file",
+        default=argparse.SUPPRESS,
+        help="Path to a custom headphone compensation WAV. Defaults to <dir_path>/headphones.wav.",
+    )
+    arg_parser.add_argument(
+        "--print_progress", 
+        action="store_true",
+        help="Accepted for GUI compatibility; no effect on processing."
+    )
+    arg_parser.add_argument(
+        "--playback_device",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="Accepted for GUI compatibility; ignored during processing."
+    )
+    arg_parser.add_argument(
+        "--recording_device",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="Accepted for GUI compatibility; ignored during processing."
+    )
+    arg_parser.add_argument(
+        "--output_channels",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="Accepted for GUI compatibility; ignored during processing."
+    )
+    arg_parser.add_argument(
+        "--input_channels",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="Accepted for GUI compatibility; ignored during processing."
+    )
+    arg_parser.add_argument(
         "--diffuse_field_compensation",
         action="store_true",
         dest="do_diffuse_field_compensation",
@@ -831,6 +874,9 @@ def create_cli():
     if "c" in args:
         args["head_ms"] = args["c"]
         del args["c"]
+    for _gui_only in ("compensation", "print_progress", "playback_device",
+                      "recording_device", "output_channels", "input_channels"):
+        args.pop(_gui_only, None)
     return args
 
 
