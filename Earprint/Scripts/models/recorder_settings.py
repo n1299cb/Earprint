@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -11,6 +11,7 @@ class RecorderSettings:
     output_channels: List[int]
     input_channels: List[int]
     output_file: str = ""
+    speaker_channel_map: Optional[Dict[str, int]] = None
     
     def validate(self) -> List[str]:
         """Validate recorder settings and return list of errors."""

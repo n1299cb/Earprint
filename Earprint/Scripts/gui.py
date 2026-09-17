@@ -629,6 +629,7 @@ class EarprintGUI(QMainWindow):
                 recording_device=self.recording_device_var.currentText().split(":")[0],
                 output_channels=self.channel_mappings.get("output_channels", []),
                 input_channels=self.channel_mappings.get("input_channels", []),
+                speaker_channel_map=self.channel_mappings.get("speaker_channel_map"),
             )
 
             def prompt(msg: str) -> None:
@@ -1699,7 +1700,11 @@ class EarprintGUI(QMainWindow):
     def save_channel_mappings(self, dialog):
         speakers = [int(box.currentText()) - 1 for box in self.speaker_channel_vars]
         mics = [int(box.currentText()) - 1 for box in self.mic_channel_vars]
-        self.channel_mappings = {"output_channels": speakers, "input_channels": mics}
+        self.channel_mappings = {
+            "output_channels": speakers,
+            "input_channels": mics,
+            "speaker_channel_map": dict(zip(self.selected_layout, speakers)),
+        }
         QMessageBox.information(self, "Channel Mappings", "Channel mappings saved successfully.")
         dialog.accept()
 
@@ -1711,9 +1716,11 @@ class EarprintGUI(QMainWindow):
             playback_channels = sd.query_devices(playback_idx)["max_output_channels"]
             record_channels = sd.query_devices(record_idx)["max_input_channels"]
             spk_count = len(self.selected_layout)
+            out_channels = list(range(min(playback_channels, spk_count)))
             self.channel_mappings = {
-                "output_channels": list(range(min(playback_channels, spk_count))),
+                "output_channels": out_channels,
                 "input_channels": list(range(min(record_channels, 2))),
+                "speaker_channel_map": dict(zip(self.selected_layout, out_channels)),
             }
             if not silent:
                 QMessageBox.information(self, "Auto Map", "Channel mappings assigned automatically.")

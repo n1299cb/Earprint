@@ -103,4 +103,5 @@ class RecordingViewModel:
             output_device=settings.playback_device,
             progress_fn=progress_callback,
             input_channels=settings.input_channels or None,
+            speaker_channel_map=settings.speaker_channel_map or None,
         )
