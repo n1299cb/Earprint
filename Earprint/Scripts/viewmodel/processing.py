@@ -42,8 +42,6 @@ class ProcessingViewModel:
                 args.extend(["--headphones", settings.headphone_file])
             if not settings.headphone_eq_enabled:
                 args.append("--no_headphone_compensation")
-            if settings.compensation_type:
-                args.append(settings.compensation_type)
         if settings.diffuse_field:
             args.append("--diffuse_field_compensation")
         if settings.x_curve_action == "Apply X-Curve":
