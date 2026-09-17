@@ -4,7 +4,7 @@ import os
 import struct
 import numpy as np
 import soundfile as sf
-from scipy.fftpack import fft
+from scipy.fft import fft
 from PIL import Image
 import matplotlib.ticker as ticker
 

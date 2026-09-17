@@ -370,8 +370,9 @@ def play_and_record(
     base_name = os.path.splitext(out_file)[0]
     if base_name.lower() != "headphones":
         speaker_names = base_name.split(",")
-        if len(speaker_names) != channels:
-            print(f"Warning: {len(speaker_names)} speaker labels in filename, but {channels} output channels specified.")
+        expected_ch = len(output_channels) if output_channels else channels
+        if len(speaker_names) != expected_ch:
+            print(f"Warning: {len(speaker_names)} speaker label(s) in filename, but {expected_ch} output channel(s) specified.")
             layout_name = None
             expected_order = None
             for name, order in SMPTE_ORDER.items():
@@ -392,6 +393,10 @@ def play_and_record(
     # Remap output channels if specified
     if output_channels is not None and len(output_channels) > 0:
         print(f"Remapping tracks to output channels: {output_channels}")
+
+        if len(output_channels) != n_channels:
+            print(f"  ⚠️  Warning: sweep has {n_channels} channel(s) but {len(output_channels)} "
+                  f"output channel(s) specified; unmatched tracks/channels will be silent.")
         
         # Create zero array with enough channels for highest requested channel
         max_channel = max(output_channels)

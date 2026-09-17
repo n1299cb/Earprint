@@ -969,11 +969,15 @@ class EarprintGUI(QMainWindow):
 
         main_layout = QHBoxLayout()
 
-        playback_idx = int(self.playback_device_var.currentText().split(":")[0])
-        record_idx = int(self.recording_device_var.currentText().split(":")[0])
-
-        playback_channels = sd.query_devices(playback_idx)["max_output_channels"]
-        record_channels = sd.query_devices(record_idx)["max_input_channels"]
+        try:
+            playback_idx = int(self.playback_device_var.currentText().split(":")[0])
+            record_idx = int(self.recording_device_var.currentText().split(":")[0])
+            playback_channels = sd.query_devices(playback_idx)["max_output_channels"]
+            record_channels = sd.query_devices(record_idx)["max_input_channels"]
+        except (ValueError, IndexError, KeyError, sd.PortAudioError):
+            QMessageBox.warning(self, "Channel Mapping",
+                                "Select valid playback and recording devices first.")
+            return
 
         speaker_labels = self.selected_layout
         mic_labels = ["Mic Left", "Mic Right"]

@@ -7,7 +7,8 @@ import warnings
 import csv
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy import signal, fftpack
+from scipy import signal
+from scipy.fft import next_fast_len
 from scipy.signal import correlate
 from PIL import Image
 from autoeq.frequency_response import FrequencyResponse
@@ -279,7 +280,7 @@ class HRIR:
         seconds_per_octave = len(self.estimator) / self.estimator.fs / self.estimator.n_octaves
         fade_out = 2 * int(self.fs * seconds_per_octave * (1 / 24))  # Duration of 1/24 octave in the sweep
         window = signal.windows.hann(fade_out)[fade_out // 2 :]
-        fft_len = fftpack.next_fast_len(max(tail_indices))
+        fft_len = next_fast_len(max(tail_indices))
         tail_ind = min(np.min(lengths), fft_len)
         for speaker, pair in self.irs.items():
             for ir in pair.values():

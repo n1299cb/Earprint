@@ -4,7 +4,7 @@ import os
 from argparse import ArgumentParser
 import pickle
 from pathlib import Path
-from scipy.fftpack import fft
+from scipy.fft import fft
 from scipy.signal import convolve
 from scipy.signal.windows import hann
 import numpy as np

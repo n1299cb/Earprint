@@ -46,7 +46,10 @@ def load_delays(path: str) -> Dict[str, float]:
             raise ValueError('JSON must contain an object mapping speaker names to delay')
         for name, value in data.items():
             if name.upper() in SPEAKER_NAMES:
-                delays_ms[name.upper()] = float(value)
+                try:
+                    delays_ms[name.upper()] = float(value)
+                except (TypeError, ValueError):
+                    continue
     except json.JSONDecodeError:
         with open(path, 'r', encoding='utf-8') as fh:
             reader = csv.reader(fh)
