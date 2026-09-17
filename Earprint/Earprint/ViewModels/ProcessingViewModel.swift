@@ -261,9 +261,6 @@ final class ProcessingViewModel: ObservableObject {
         if config.generatePlots {
             args.append("--plot")
         }
-        if config.exportCSV {
-            args.append("--csv")
-        }
         
         return args
     }

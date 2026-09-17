@@ -714,7 +714,7 @@ class ImpulseResponse:
         ascend = int(ascend_ms / 1000 * self.fs)
         plateu = int((nfft - ascend) * 3 / 4)  # 75%
         descend = nfft - ascend - plateu  # 25%
-        window = np.concatenate([signal.hann(ascend * 2)[:ascend], np.ones(plateu), signal.hann(descend * 2)[descend:]])
+        window = np.concatenate([signal.windows.hann(ascend * 2)[:ascend], np.ones(plateu), signal.windows.hann(descend * 2)[descend:]])
 
         # Crop from 10ms before peak to start of tail
         peak_ind, tail_ind, noise_floor, _ = self.decay_params()

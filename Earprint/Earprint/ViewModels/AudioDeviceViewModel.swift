@@ -38,12 +38,30 @@ struct AudioLevelMeter {
 struct ChannelMapping {
     let inputChannels: [Int]
     let outputChannels: [Int]
+    let speakerChannelMap: [String: Int]?
     let deviceInputChannels: Int
     let deviceOutputChannels: Int
     
     var isValid: Bool {
+        !inputChannels.isEmpty &&           // ← ADD THIS
+        !outputChannels.isEmpty &&          // ← ADD THIS
         inputChannels.allSatisfy { $0 < deviceInputChannels } &&
         outputChannels.allSatisfy { $0 < deviceOutputChannels }
+    }
+    
+    func channelForSpeaker(_ speaker: String) -> Int? {
+        return speakerChannelMap?[speaker]
+    }
+        
+    func channelsForSpeakers(_ speakers: [String]) -> [Int]? {
+        guard let map = speakerChannelMap else { return nil }
+            
+        var channels: [Int] = []
+        for speaker in speakers {
+            guard let channel = map[speaker] else { return nil }
+            channels.append(channel)
+        }
+        return channels.isEmpty ? nil : channels
     }
 }
 
@@ -120,13 +138,14 @@ final class AudioDeviceViewModel: ObservableObject {
         updateDeviceWarnings()
     }
     
-    func setChannelMapping(input: [Int], output: [Int]) {
+    func setChannelMapping(input: [Int], output: [Int], speakerMap: [String: Int]? = nil) {
         guard let inputDevice = selectedInputDevice,
               let outputDevice = selectedOutputDevice else { return }
         
         channelMapping = ChannelMapping(
             inputChannels: input,
             outputChannels: output,
+            speakerChannelMap: speakerMap,
             deviceInputChannels: inputDevice.maxInputChannels,
             deviceOutputChannels: outputDevice.maxOutputChannels
         )

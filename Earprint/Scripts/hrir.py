@@ -135,6 +135,9 @@ class HRIR:
         irs = np.vstack(irs)
 
         # Sort to output order
+        dropped = [ch for ch in ir_order if ch not in track_order]
+        if dropped:
+            warnings.warn(f"write_wav: {len(dropped)} channel(s) not in track_order and will be omitted: {dropped}")
         irs = irs[[ir_order.index(ch) for ch in track_order], :]
 
         # Write to file
@@ -249,7 +252,7 @@ class HRIR:
                 pair["left"].data = pair["left"].data[peak_right - delay :]
 
             # Make sure impulse response starts from silence
-            window = signal.hanning(head * 2)[:head]
+            window = signal.windows.hann(head * 2)[:head]
             pair["left"].data[:head] *= window
             pair["right"].data[:head] *= window
 
@@ -275,13 +278,16 @@ class HRIR:
         # Crop all tracks by last tail index
         seconds_per_octave = len(self.estimator) / self.estimator.fs / self.estimator.n_octaves
         fade_out = 2 * int(self.fs * seconds_per_octave * (1 / 24))  # Duration of 1/24 octave in the sweep
-        window = signal.hanning(fade_out)[fade_out // 2 :]
+        window = signal.windows.hann(fade_out)[fade_out // 2 :]
         fft_len = fftpack.next_fast_len(max(tail_indices))
         tail_ind = min(np.min(lengths), fft_len)
         for speaker, pair in self.irs.items():
             for ir in pair.values():
                 ir.data = ir.data[:tail_ind]
-                ir.data *= np.concatenate([np.ones(len(ir.data) - len(window)), window])
+                if len(ir.data) >= len(window):
+                    ir.data *= np.concatenate([np.ones(len(ir.data) - len(window)), window])
+                else:
+                    ir.data *= window[-len(ir.data):]
 
     def align_ipsilateral_all(self, speaker_pairs=None, segment_ms=30):
         if speaker_pairs is None:

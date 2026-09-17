@@ -103,21 +103,39 @@ enum ProcessingState: Equatable {
     }
 }
 
-// MARK: - Speaker Layout Support Types (add to Models.swift)
+// MARK: - Recording Type
 
-struct SpeakerLayoutInfo {
-    let name: String
-    let displayName: String
-    let groups: [RecordingGroup]
-    let icon: String
-}
-
-struct RecordingGroup {
-    let name: String
-    let speakers: [String]
+enum RecordingType: String, CaseIterable {
+    case measurement = "Measurement Recording"
+    case headphone = "Headphone EQ"
+    case roomResponse = "Room Response"
+    case testSweep = "Test Sweep"
     
-    var filename: String {
-        return "\(name).wav"
+    var defaultFileName: String {
+        switch self {
+        case .measurement: return "measurement"
+        case .headphone: return "headphones"
+        case .roomResponse: return "room"
+        case .testSweep: return "test_sweep"
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .measurement: return "Record binaural impulse response measurements"
+        case .headphone: return "Record headphone compensation signal"
+        case .roomResponse: return "Record room acoustic response"
+        case .testSweep: return "Record test sweep for calibration"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .measurement: return "waveform.circle"
+        case .headphone: return "headphones"
+        case .roomResponse: return "speaker.wave.3"
+        case .testSweep: return "tuningfork"
+        }
     }
 }
 

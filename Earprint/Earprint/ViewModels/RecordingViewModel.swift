@@ -90,6 +90,8 @@ final class RecordingViewModel: ObservableObject {
     @Published var currentRecordingConfiguration: RecordingConfiguration?
     @Published var remainingGroups: [SpeakerGroup] = []
     
+    private var currentChannelMapping: ChannelMapping? = nil
+    
     // MARK: - Computed Properties
     var recordingName: String {
         latestRecording?.name ?? "No recordings"
@@ -173,7 +175,7 @@ final class RecordingViewModel: ObservableObject {
     }
 
     private func buildCaptureWizardArgs(_ configuration: RecordingConfiguration) -> [String] {
-        let baseArgs = [
+        var baseArgs = [
             "--layout", configuration.speakerLayout ?? "2.0",
             "--dir", configuration.measurementDir,
             "--input_device", configuration.recordingDevice,
@@ -185,6 +187,22 @@ final class RecordingViewModel: ObservableObject {
         // Add custom test signals if specified and not default
         if !configuration.testSignal.contains("sweep-6.15s-48000Hz") {
             return baseArgs + ["--stereo_sweep", configuration.testSignal]
+        }
+        
+        // Add channel mapping if available
+        if let channelMapping = currentChannelMapping,
+            let speakerMap = channelMapping.speakerChannelMap,
+            !speakerMap.isEmpty {
+            // Convert to JSON string
+            do {
+                let jsonData = try JSONSerialization.data(withJSONObject: speakerMap, options: [])
+                if let jsonString = String(data: jsonData, encoding: .utf8) {
+                    baseArgs.append(contentsOf: ["--channel_map", jsonString])
+                    print("📍 Passing channel map to Python: \(jsonString)")
+                }
+            } catch {
+                print("⚠️ Failed to serialize channel map: \(error)")
+            }
         }
         
         return baseArgs
@@ -208,9 +226,10 @@ final class RecordingViewModel: ObservableObject {
             
             // DEBUG:
             print("Swift passing devices - Input: '\(configuration.recordingDevice)', Output: '\(configuration.playbackDevice)'")
+            print("Swift passing outputChannels: \(configuration.outputChannels ?? [])")
         
             // Build args with CORRECT CLI arguments that match the Python backend
-            let args = [
+            var args = [
                 "--play", configuration.testSignal,
                 "--record", configuration.outputFile ?? "\(configuration.measurementDir)/recording.wav",
                 "--output_device", configuration.playbackDevice,
@@ -218,6 +237,12 @@ final class RecordingViewModel: ObservableObject {
                 "--channels", String(channels),
                 "--print_progress"
             ]
+        
+            // Pass output channel mapping to Python
+            if let outputChannels = configuration.outputChannels, !outputChannels.isEmpty {
+                let channelList = outputChannels.map(String.init).joined(separator: ",")
+                args.append(contentsOf: ["--output_channels", channelList])
+            }
             
             return args
     }
@@ -453,14 +478,16 @@ final class RecordingViewModel: ObservableObject {
         )
         
         // Use basic channel mapping - device compatibility handled at RecordingView level
-        let outputChannels = getOutputChannelsForGroup(currentGroup)
+        let outputChannels = getOutputChannelsForGroup(currentGroup, channelMapping: currentChannelMapping)
         
         let fileName = "\(currentGroup.speakers.joined(separator: ",")).wav"
         let groupOutputPath = "\(baseConfig.measurementDir)/\(fileName)"
         
+        let groupTestSignal = getTestSignalForGroup(currentGroup)
+        
         let groupConfig = RecordingConfiguration(
             measurementDir: baseConfig.measurementDir,
-            testSignal: baseConfig.testSignal,
+            testSignal: groupTestSignal,
             playbackDevice: baseConfig.playbackDevice,
             recordingDevice: baseConfig.recordingDevice,
             outputFile: groupOutputPath,
@@ -477,14 +504,17 @@ final class RecordingViewModel: ObservableObject {
         _ group: SpeakerGroup,
         channelMapping: ChannelMapping? = nil
     ) -> [Int] {
-        // Priority 1: Use explicit user channel mapping if available
+        // Priority 1: Use user's speaker-specific mapping if available
         if let mapping = channelMapping,
-           mapping.outputChannels.count >= group.speakers.count {
-            return Array(mapping.outputChannels.prefix(group.speakers.count))
+            let userChannels = mapping.channelsForSpeakers(group.speakers) {
+            print("✅ Using user-configured channels for \(group.speakers): \(userChannels)")
+            return userChannels
         }
-        
-        // Priority 2: Use intelligent speaker-based mapping
-        return mapSpeakersToChannels(group.speakers)
+            
+        // Priority 2: Use intelligent speaker-based SMPTE mapping
+        let smpteChannels = mapSpeakersToChannels(group.speakers)
+        print("📍 Using SMPTE channels for \(group.speakers): \(smpteChannels)")
+        return smpteChannels
     }
 
     func onGroupRecordingCompleted() {
@@ -1308,6 +1338,7 @@ extension RecordingViewModel {
     ) {
         // Store configuration for sequential recording
         currentRecordingConfiguration = baseConfig
+        currentChannelMapping = channelMapping
         remainingGroups = layout.groups
         
         // Initialize sequential state
@@ -1339,9 +1370,12 @@ extension RecordingViewModel {
         let fileName = "\(currentGroup.speakers.joined(separator: ",")).wav"
         let outputPath = "\(baseConfig.measurementDir)/\(fileName)"
         
+        // Get appropriate test signal for this specific group
+        let groupTestSignal = getTestSignalForGroup(currentGroup)
+        
         let groupConfig = RecordingConfiguration(
             measurementDir: baseConfig.measurementDir,
-            testSignal: baseConfig.testSignal,
+            testSignal: groupTestSignal,
             playbackDevice: baseConfig.playbackDevice,
             recordingDevice: baseConfig.recordingDevice,
             outputFile: outputPath,
@@ -1358,6 +1392,7 @@ extension RecordingViewModel {
         sequentialState = .completed
         recordingState = .completed(outputFile: "Sequential recording completed") // Add the required String parameter
         currentRecordingConfiguration = nil
+        currentChannelMapping = nil
         remainingGroups = []
         
         // Notify completion

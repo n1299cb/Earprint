@@ -328,6 +328,7 @@ def play_and_record(
     input_device: Optional[str] = None,
     output_device: Optional[str] = None,
     host_api: Optional[str] = None,
+    output_channels: Optional[list[int]] = None,
     channels: int = 2,
     append: bool = False,
     output_file: Optional[str] = None,
@@ -343,6 +344,7 @@ def play_and_record(
         output_device: Number of the output device as seen by sounddevice
         host_api: Host API name
         channels: Number of output channels
+        output_channels: List of output channel indices for playback routing (e.g., [2] for center, [4,5] for SL/SR)
         append: Add track(s) to an existing file? Silence will be added to end of each track to make all equal in
                 length
         report_file: Path to write recording quality report. Defaults to "<record>_report.txt".
@@ -380,6 +382,24 @@ def play_and_record(
     fs, data = read_wav(play, expand=True)  # expand=True ensures mono files become 2D arrays
     print(f"Audio file shape: {data.shape}, n_channels: {data.shape[0]}")
     n_channels = data.shape[0]
+    
+    # Remap output channels if specified
+    if output_channels is not None and len(output_channels) > 0:
+        print(f"Remapping tracks to output channels: {output_channels}")
+        
+        # Create zero array with enough channels for highest requested channel
+        max_channel = max(output_channels)
+        remapped_data = np.zeros((max_channel + 1, data.shape[1]))
+        
+        # Map each track to its target channel
+        for track_idx, channel_idx in enumerate(output_channels):
+            if track_idx < n_channels:
+                remapped_data[channel_idx, :] = data[track_idx, :]
+                print(f"  Track {track_idx} → Channel {channel_idx}")
+        
+        data = remapped_data
+        n_channels = data.shape[0]
+        print(f"Remapped output shape: {data.shape}")
 
     # Find and set devices as default
     input_device, output_device = get_devices(
@@ -505,6 +525,12 @@ def create_cli():
     )
     arg_parser.add_argument("--channels", type=int, default=16, help="Number of output channels.")
     arg_parser.add_argument(
+        "--output_channels",
+        type=str,
+        default=None,
+        help="Comma-separated list of output channel indices for playback routing (e.g., '2' for center, '4,5' for SL/SR)"
+    )
+    arg_parser.add_argument(
         "--append",
         action="store_true",
         help="Add track(s) to existing file? Silence will be added to the end of all tracks to "
@@ -516,6 +542,14 @@ def create_cli():
         help="Print recording progress updates for GUI integration",
     )
     args = vars(arg_parser.parse_args())
+    
+    # Parse output_channels from comma-separated string to list of ints
+    if 'output_channels' in args and args['output_channels'] is not None:
+        try:
+            args['output_channels'] = [int(x.strip()) for x in args['output_channels'].split(',')]
+        except ValueError:
+            raise ValueError("output_channels must be comma-separated integers (e.g., '2' or '4,5')")
+    
     return args
 
 

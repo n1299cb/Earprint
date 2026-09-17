@@ -519,7 +519,7 @@ def create_target(estimator, bass_boost_gain, bass_boost_fc, bass_boost_q, tilt)
         name="high_pass", frequency=[10, 18, 19, 20, 21, 22, 20000], raw=[-80, -5, -1.6, -0.6, -0.2, 0, 0]
     )
     high_pass.interpolate(f_min=10, f_max=estimator.fs / 2, f_step=1.01)
-    # target.raw += high_pass.raw
+    target.raw += high_pass.raw
     return target
 
 

@@ -140,7 +140,31 @@ struct SettingsView: View {
                         set: { newValue in
                             let outputChannels = newValue["output_channels"] ?? []
                             let inputChannels = newValue["input_channels"] ?? []
-                            self.audioDeviceVM.setChannelMapping(input: inputChannels, output: outputChannels)
+                            let speakerIndices = newValue["speaker_indices"] ?? []
+                            let speakerChannels = newValue["speaker_channels"] ?? []
+                            
+                            // Reconstruct speaker map from parallel arrays
+                            var speakerMap: [String: Int] = [:]
+                            print("🔍 DEBUG SettingsView: Reconstructing speaker map")
+                            print("   - speakerIndices: \(speakerIndices)")
+                            print("   - speakerChannels: \(speakerChannels)")
+                            print("   - layout.speakerLabels: \(layout.speakerLabels)")
+                            
+                            for (i, index) in speakerIndices.enumerated() {
+                                if index < layout.speakerLabels.count && i < speakerChannels.count {
+                                    speakerMap[layout.speakerLabels[index]] = speakerChannels[i]
+                                    print("   - Mapping \(layout.speakerLabels[index]) -> \(speakerChannels[i])")
+                                }
+                            }
+
+                            print("🔍 DEBUG SettingsView: Final speakerMap: \(speakerMap)")
+                            
+                            // Pass the speaker map to setChannelMapping
+                            self.audioDeviceVM.setChannelMapping(
+                                input: inputChannels,
+                                output: outputChannels,
+                                speakerMap: speakerMap.isEmpty ? nil : speakerMap
+                            )
                         }
                     ),
                     isPresented: $showingChannelMapping,

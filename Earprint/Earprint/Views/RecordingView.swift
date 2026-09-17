@@ -188,6 +188,16 @@ struct RecordingView: View {
                 // Could show alert dialog here for user confirmation
             }
             
+            // Validate channel mapping capabilities
+            if let mapping = audioDeviceVM.channelMapping {
+                print("🔍 DEBUG RecordingView: channelMapping exists")
+                print("   - inputChannels: \(mapping.inputChannels)")
+                print("   - outputChannels: \(mapping.outputChannels)")
+                print("   - speakerChannelMap: \(String(describing: mapping.speakerChannelMap))")
+            } else {
+                print("🔍 DEBUG RecordingView: channelMapping is NIL!")
+            }
+            
             // Use the new RecordingViewModel integration methods
             recordingVM.startLayoutBasedRecording(
                 layout: layout,
@@ -197,6 +207,8 @@ struct RecordingView: View {
                 outputDevice: outputDevice,
                 channelMapping: audioDeviceVM.channelMapping
             )
+            
+            print("🔍 DEBUG: Passing channelMapping to startLayoutBasedRecording: \(String(describing: audioDeviceVM.channelMapping?.speakerChannelMap))")
             
             // Set results URL for first expected file
             if let firstGroup = layout.groups.first {

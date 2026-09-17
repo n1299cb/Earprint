@@ -149,7 +149,7 @@ final class LayoutManager: ObservableObject {
         }
     }
     
-    private func executeLayoutScript() throws -> [String: SpeakerLayout] {
+    private nonisolated func executeLayoutScript() throws -> [String: SpeakerLayout] {
         let process = Process()
         
         // Try to find Python executable
@@ -273,7 +273,7 @@ final class LayoutManager: ObservableObject {
         }
     }
     
-    private func parseLayoutsFromJSON(_ layoutsDict: [String: [String: Any]]) throws -> [String: SpeakerLayout] {
+    private nonisolated func parseLayoutsFromJSON(_ layoutsDict: [String: [String: Any]]) throws -> [String: SpeakerLayout] {
         var layouts: [String: SpeakerLayout] = [:]
         
         for (name, layoutData) in layoutsDict {
@@ -303,7 +303,7 @@ final class LayoutManager: ObservableObject {
         return layouts
     }
     
-    private func findPythonExecutable() -> String? {
+    private nonisolated func findPythonExecutable() -> String? {
         // Check for bundled Python first
         let bundledPaths = [
             "\(Bundle.main.resourcePath ?? "")/EmbeddedPython/Python.framework/Versions/Current/bin/python3",

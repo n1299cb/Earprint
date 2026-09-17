@@ -451,9 +451,24 @@ struct ChannelMappingView: View {
     }
     
     private func saveMapping() {
-        channelMapping["output_channels"] = Array(speakerSelections.prefix(speakerLabels.count))
-        channelMapping["input_channels"] = Array(micSelections.prefix(2))
-        
+        // Build parallel arrays for speaker mapping
+        var speakerNames: [Int] = []  // We'll encode speaker indices
+        var speakerChannels: [Int] = []
+            
+        for (index, speaker) in speakerLabels.enumerated() {
+            if index < speakerSelections.count {
+                speakerNames.append(index)  // Store index of speaker
+                speakerChannels.append(speakerSelections[index])
+            }
+        }
+            
+        channelMapping = [
+            "output_channels": Array(speakerSelections.prefix(speakerLabels.count)),
+            "input_channels": Array(micSelections.prefix(2)),
+            "speaker_indices": speakerNames,      // NEW: indices of speakers
+            "speaker_channels": speakerChannels   // NEW: their channel assignments
+        ]
+            
         onSave()
         isPresented = false
         dismiss()

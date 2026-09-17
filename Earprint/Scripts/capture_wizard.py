@@ -10,9 +10,11 @@ callbacks.
 
 import os
 import argparse
+import json
 from typing import Any, Callable, Optional
 
 from generate_layout import select_layout, init_layout
+from constants import SPEAKER_NAMES, SMPTE_ORDER
 import recorder
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,6 +29,45 @@ DEFAULT_MONO_SWEEP = os.path.join(
     "sweep-seg-FL-mono-6.15s-48000Hz-32bit-2.93Hz-24000Hz.wav",
 )
 
+def get_output_channels_for_group(speakers: list[str], speaker_channel_map: Optional[dict[str, int]] = None) -> list[int]:
+    """Map speaker names to their channel indices.
+    
+    Args:
+        speakers: List of speaker names (e.g., ["FL", "FR"] or ["FC"])
+        speaker_channel_map: Optional user-defined mapping (e.g., {"FL": 0, "FR": 1, "FC": 2, "BL": 3, "BR": 4})
+    
+    Returns:
+        List of channel indices
+    """
+    # Priority 1: Use user's custom mapping if provided
+    if speaker_channel_map is not None:
+        channels = []
+        for speaker in speakers:
+            if speaker in speaker_channel_map:
+                channels.append(speaker_channel_map[speaker])
+            else:
+                print(f"⚠️ Speaker {speaker} not in user mapping, using SMPTE default")
+                channels.append(_get_smpte_channel(speaker))
+        return sorted(channels)
+    
+    # Priority 2: Use SMPTE default mapping
+    channels = []
+    for speaker in speakers:
+        channels.append(_get_smpte_channel(speaker))
+    return sorted(list(set(channels)))  # Remove duplicates and sort
+
+
+def _get_smpte_channel(speaker: str) -> int:
+    """Get SMPTE standard channel for a speaker."""
+    mapping = {
+        "FL": 0, "FR": 1, "FC": 2, "LFE": 3,
+        "SL": 4, "SR": 5, "BL": 6, "BR": 7,
+        "WL": 8, "WR": 9,
+        "TFL": 10, "TFR": 11, "TML": 12, "TMR": 13,
+        "TBL": 14, "TBR": 15,
+    }
+    return mapping.get(speaker, 0)
+
 
 def run_capture(
     layout_name: str,
@@ -38,6 +79,7 @@ def run_capture(
     message_fn: Callable[[str], Any] = print,
     progress_fn: Optional[Callable[[float, float], None]] = None,
     auto_start: bool = False,
+    speaker_channel_map: Optional[dict[str, int]] = None,
     **rec_kwargs: Any,
 ) -> None:
     """Run interactive capture for each speaker group.
@@ -137,28 +179,26 @@ def run_capture(
     # Speaker group recordings
     for group in groups:
         filename = ",".join(group) + ".wav"
-        # Always use stereo sweep for groups with >1 speaker, mono for single speakers
         sweep = stereo_sweep if len(group) > 1 else mono_sweep
-        
-        # Recording channels should always be 2 for binaural microphones
-        # regardless of how many speakers are playing
         channels = 2
-        
+    
         if not auto_start:
             prompt = f"\nPosition for {filename} and press Enter to start recording..."
             prompt_fn(prompt)
         else:
             message_fn(f"\nRecording {filename}...")
-        
+    
         try:
+            output_channels = get_output_channels_for_group(group, speaker_channel_map)  # ← Pass the map
             recorder.play_and_record(
                 play=sweep,
                 record=os.path.join(out_dir, filename),
                 channels=channels,
+                output_channels=output_channels,
                 progress_callback=progress_fn,
                 **rec_kwargs,
             )
-        except Exception as exc:  # pragma: no cover - depends on sounddevice
+        except Exception as exc:
             message_fn(f"\n⚠️  Recording failed: {exc}")
             return
 
@@ -196,7 +236,23 @@ def main() -> None:
         action="store_true",
         help="Skip interactive prompts and start recordings immediately (for GUI use)",
     )
+    parser.add_argument(
+        "--channel_map",
+        type=str,
+        default=None,
+        help='Channel mapping as JSON string (e.g., \'{"FL":0,"FR":1,"FC":2,"BL":3,"BR":4}\')'
+    )
     args = parser.parse_args()
+
+    # Parse channel map from JSON
+    speaker_channel_map = None
+    if args.channel_map:
+        try:
+            speaker_channel_map = json.loads(args.channel_map)
+            print(f"📍 Using custom channel mapping: {speaker_channel_map}")
+        except json.JSONDecodeError:
+            print(f"⚠️ Invalid channel map JSON: {args.channel_map}")
+            return
 
     progress_fn: Optional[Callable[[float, float], None]]
     if args.print_progress:
@@ -221,6 +277,7 @@ def main() -> None:
         host_api=args.host_api,
         progress_fn=progress_fn,
         auto_start=args.auto_start,
+        speaker_channel_map=speaker_channel_map,
     )
 
 
