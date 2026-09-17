@@ -39,6 +39,11 @@ class RecordingViewModel:
                 "--input_device", settings.recording_device,
                 "--channels", str(channels),
             ]
+
+            if settings.output_channels:
+                args.extend(["--output_channels", ",".join(str(c) for c in settings.output_channels)])
+            if settings.input_channels:
+                args.extend(["--input_channels", ",".join(str(c) for c in settings.input_channels)])
             
             # Add optional output file if different from record path
             if settings.output_file and settings.output_file != record_path:
@@ -61,6 +66,8 @@ class RecordingViewModel:
                 record=record_path,
                 input_device=settings.recording_device,
                 output_device=settings.playback_device,
+                output_channels=settings.output_channels or None,
+                input_channels=settings.input_channels or None,
                 channels=channels,
                 progress_callback=progress_callback,
             )
@@ -95,4 +102,5 @@ class RecordingViewModel:
             input_device=settings.recording_device,
             output_device=settings.playback_device,
             progress_fn=progress_callback,
+            input_channels=settings.input_channels or None,
         )

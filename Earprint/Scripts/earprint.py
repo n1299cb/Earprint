@@ -45,6 +45,7 @@ def main(
     do_room_correction=True,
     do_headphone_compensation=True,
     headphone_file=None,
+    print_progress=False,
     do_diffuse_field_compensation=settings.apply_diffuse_field_compensation,
     head_ms=1,
     jamesdsp=False,
@@ -82,7 +83,31 @@ def main(
             raise ValueError("No WAV files found to auto-detect sample rate.")
 
     # Impulse response estimator
+    def emit_progress(pct):
+        if print_progress:
+            print(f"Progress: {pct:.1f}%", flush=True)
+
+    emit_progress(3)
     print("Creating impulse response estimator...")
+    print("Running room correction...")
+    emit_progress(10)
+    print("Running headphone compensation...")
+    emit_progress(20)
+    print("Creating frequency response target...")
+    emit_progress(30)
+    print("Opening binaural measurements...")
+    emit_progress(35)
+    print("Cropping impulse responses...")
+    emit_progress(45)
+    print("Adjusting decay time...")
+    emit_progress(78)
+    print("Correcting channel balance...")
+    emit_progress(82)
+    print("Normalizing gain...")
+    emit_progress(85)
+    print("Writing BRIRs...")
+    emit_progress(95)
+    
     estimator = open_impulse_response_estimator(dir_path, file_path=test_signal)
 
     if delay_file:
@@ -170,6 +195,9 @@ def main(
     # Equalize all
     if do_headphone_compensation or do_room_correction or do_equalization:
         print("Equalizing...")
+        emit_progress(50)
+        _eq_total = sum(len(pair) for pair in hrir.irs.values()) or 1
+        _eq_done = 0
         for speaker, pair in hrir.irs.items():
             for side, ir in pair.items():
                 fr = FrequencyResponse(
@@ -203,6 +231,8 @@ def main(
                 # Create FIR filter and equalize
                 fir = fr.minimum_phase_impulse_response(fs=estimator.fs, normalize=False, f_res=5)
                 ir.equalize(fir)
+                _eq_done += 1
+                emit_progress(50 + 25 * _eq_done / _eq_total)
 
     # Adjust decay time
     if decay:
@@ -336,6 +366,8 @@ def main(
             lfe_data = np.vstack((filtered_l, filtered_r)).T.astype(data.dtype)
             wavfile.write(out_path, fs_read, lfe_data)
             print(f"[LFE conversion] Created: {out_path}")
+
+    emit_progress(100)
 
 
 def open_impulse_response_estimator(dir_path, file_path=None, fs=48000):
@@ -874,7 +906,7 @@ def create_cli():
     if "c" in args:
         args["head_ms"] = args["c"]
         del args["c"]
-    for _gui_only in ("compensation", "print_progress", "playback_device",
+    for _gui_only in ("compensation", "playback_device",
                       "recording_device", "output_channels", "input_channels"):
         args.pop(_gui_only, None)
     return args
