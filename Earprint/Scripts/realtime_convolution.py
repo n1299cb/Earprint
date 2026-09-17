@@ -274,18 +274,30 @@ def convolve_file(
     hrir,
     block_size: int = 1024,
 ) -> None:
-    """Offline convolution helper for multi-channel files."""
+    """Offline convolution helper for multi-channel files.
+
+    The input WAV's channels must match the HRIR's speaker set in count and
+    order. For an Earprint ``hrir.wav`` that is the HEXADECAGONAL track order
+    (FL, FR, FC, LFE, BL, BR, SL, SR, WL, WR, TFL, TFR, TSL, TSR, TBL, TBR) --
+    note back (BL/BR) precedes side (SL/SR), unlike SMPTE program order.
+    Re-order SMPTE content to match before convolving.
+    """
 
     import soundfile as sf
 
     fs = hrir.fs
     data, fs_in = sf.read(input_wav, always_2d=True)
     if fs_in != fs:
-        raise ValueError("Sampling rate mismatch")
+        raise ValueError(f"Sampling rate mismatch: input {fs_in} Hz vs HRIR {fs} Hz")
     engine = RealTimeConvolver(hrir, block_size=block_size)
+    data = np.transpose(data)
+    if data.shape[0] != engine.n_speakers:
+        raise ValueError(
+            f"Input has {data.shape[0]} channel(s) but the HRIR expects "
+            f"{engine.n_speakers} (one per speaker), in HEXADECAGONAL order."
+        )
     out = []
     idx = 0
-    data = np.transpose(data)
     while idx < data.shape[1]:
         block = data[:, idx : idx + block_size]
         if block.shape[1] < block_size:

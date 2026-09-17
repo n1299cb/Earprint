@@ -36,8 +36,8 @@ def main(
     decay=None,
     target_level=None,
     fr_combination_method="average",
-    specific_limit=20000,
-    generic_limit=1000,
+    specific_limit=400,
+    generic_limit=300,
     bass_boost_gain=0.0,
     bass_boost_fc=105,
     bass_boost_q=0.76,
@@ -140,6 +140,8 @@ def main(
     hp_left, hp_right = None, None
     if do_headphone_compensation:
         print("Running headphone compensation...")
+        if headphone_file and not os.path.isfile(headphone_file):
+            raise FileNotFoundError(f"Headphone measurement file not found: {headphone_file}")
         hp_left, hp_right = headphone_compensation(estimator, dir_path, comment=metadata_comment, headphone_file=headphone_file)
 
     # Equalization
