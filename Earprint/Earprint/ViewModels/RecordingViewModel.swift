@@ -183,6 +183,12 @@ final class RecordingViewModel: ObservableObject {
             "--auto-start",    // skips interactive prompts for GUI
             "--print_progress"
         ]
+
+        // Pass input channel mapping (binaural mic inputs) to Python
+        if let inputChannels = configuration.inputChannels, !inputChannels.isEmpty {
+            let channelList = inputChannels.map(String.init).joined(separator: ",")
+            baseArgs.append(contentsOf: ["--input_channels", channelList])
+        }
         
         // Add custom test signals if specified and not default
         if !configuration.testSignal.contains("sweep-6.15s-48000Hz") {
@@ -243,7 +249,13 @@ final class RecordingViewModel: ObservableObject {
                 let channelList = outputChannels.map(String.init).joined(separator: ",")
                 args.append(contentsOf: ["--output_channels", channelList])
             }
-            
+
+            // Pass input channel mapping (binaural mic inputs) to Python
+            if let inputChannels = configuration.inputChannels, !inputChannels.isEmpty {
+                let channelList = inputChannels.map(String.init).joined(separator: ",")
+                args.append(contentsOf: ["--input_channels", channelList])
+            }
+
             return args
     }
 

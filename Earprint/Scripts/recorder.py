@@ -64,7 +64,7 @@ class DeviceNotFoundError(Exception):
         super().__init__(message)
 
 
-def record_target(file_path, length, fs, channels=2, append=False, output_file=None, report_file=None, playback_done_event=None):
+def record_target(file_path, length, fs, channels=2, input_channels=None, append=False, output_file=None, report_file=None, playback_done_event=None):
     """Records audio and writes it to a file.
 
     Args:
@@ -83,7 +83,12 @@ def record_target(file_path, length, fs, channels=2, append=False, output_file=N
     try:
         
         # Use non-blocking mode to avoid blocking issues
-        recording = sd.rec(length, samplerate=fs, channels=channels, blocking=False)
+        if input_channels:
+            # sounddevice mapping is 1-based; GUI channel indices are 0-based
+            mapping = [c + 1 for c in input_channels]
+            recording = sd.rec(length, samplerate=fs, mapping=mapping, blocking=False)
+        else:
+            recording = sd.rec(length, samplerate=fs, channels=channels, blocking=False)
         duration = length / fs
         
         # Manual wait loop - DO NOT call sd.wait() as it conflicts with main thread
@@ -311,10 +316,10 @@ def set_default_devices(input_device, output_device):
     return input_device_str, output_device_str
 
 
-def _safe_record_target(file_path, length, fs, channels=2, append=False, output_file=None, report_file=None, playback_done_event=None):
+def _safe_record_target(file_path, length, fs, channels=2, input_channels=None, append=False, output_file=None, report_file=None, playback_done_event=None):
     """Wrapper for record_target that catches and reports exceptions."""
     try:
-        record_target(file_path, length, fs, channels, append, output_file, report_file, playback_done_event)
+        record_target(file_path, length, fs, channels, input_channels, append, output_file, report_file, playback_done_event)
     except Exception as exc:
         print(f"\n❌ RECORDING THREAD ERROR: {exc}", flush=True)
         import traceback
@@ -329,6 +334,7 @@ def play_and_record(
     output_device: Optional[str] = None,
     host_api: Optional[str] = None,
     output_channels: Optional[list[int]] = None,
+    input_channels: Optional[list[int]] = None,
     channels: int = 2,
     append: bool = False,
     output_file: Optional[str] = None,
@@ -417,6 +423,7 @@ def play_and_record(
         target=lambda: _safe_record_target(
             record, data.shape[1], fs,
             channels=channels,
+            input_channels=input_channels,
             append=append,
             output_file=output_file,
             report_file=report_file,
@@ -531,6 +538,12 @@ def create_cli():
         help="Comma-separated list of output channel indices for playback routing (e.g., '2' for center, '4,5' for SL/SR)"
     )
     arg_parser.add_argument(
+        "--input_channels",
+        type=str,
+        default=None,
+        help="Comma-separated list of input channel indices for mic capture routing (e.g., '0,1' for the first two inputs)"
+    )
+    arg_parser.add_argument(
         "--append",
         action="store_true",
         help="Add track(s) to existing file? Silence will be added to the end of all tracks to "
@@ -549,6 +562,12 @@ def create_cli():
             args['output_channels'] = [int(x.strip()) for x in args['output_channels'].split(',')]
         except ValueError:
             raise ValueError("output_channels must be comma-separated integers (e.g., '2' or '4,5')")
+
+    if 'input_channels' in args and args['input_channels'] is not None:
+        try:
+            args['input_channels'] = [int(x.strip()) for x in args['input_channels'].split(',')]
+        except ValueError:
+            raise ValueError("input_channels must be comma-separated integers (e.g., '0,1')")
     
     return args
 

@@ -242,6 +242,12 @@ def main() -> None:
         default=None,
         help='Channel mapping as JSON string (e.g., \'{"FL":0,"FR":1,"FC":2,"BL":3,"BR":4}\')'
     )
+    parser.add_argument(
+        "--input_channels",
+        type=str,
+        default=None,
+        help="Comma-separated input channel indices for mic capture routing (e.g., '0,1')",
+    )
     args = parser.parse_args()
 
     # Parse channel map from JSON
@@ -252,6 +258,14 @@ def main() -> None:
             print(f"📍 Using custom channel mapping: {speaker_channel_map}")
         except json.JSONDecodeError:
             print(f"⚠️ Invalid channel map JSON: {args.channel_map}")
+            return
+
+    input_channels = None
+    if args.input_channels:
+        try:
+            input_channels = [int(x.strip()) for x in args.input_channels.split(",")]
+        except ValueError:
+            print(f"⚠️ Invalid input_channels: {args.input_channels}")
             return
 
     progress_fn: Optional[Callable[[float, float], None]]
@@ -278,6 +292,7 @@ def main() -> None:
         progress_fn=progress_fn,
         auto_start=args.auto_start,
         speaker_channel_map=speaker_channel_map,
+        input_channels=input_channels,
     )
 
 
